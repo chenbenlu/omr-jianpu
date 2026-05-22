@@ -28,12 +28,15 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # We use requirements.txt (no uv.lock). Without this override the
+          # action errors out: "No file in ... matched to [**/uv.lock]".
+          cache-dependency-glob: requirements.txt
 
       # CI runs CPU-only on GitHub-hosted runners; install a CPU torch wheel so
       # `import torch` works for any tests that touch the model module. The real
       # CUDA-enabled torch comes from the Docker base image in dev.
       - name: Install CPU torch
-        run: uv pip install --system torch==2.2.0 torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
+        run: uv pip install --system torch==2.8.0 torchvision --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install project deps
         run: uv pip install --system -r requirements.txt
