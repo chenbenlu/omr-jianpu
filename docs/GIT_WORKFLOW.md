@@ -48,7 +48,7 @@ Rules:
 
 **PR description must contain**
 1. **What changed** — one or two sentences.
-2. **Why / which task** — reference to the [CLAUDE.md](../CLAUDE.md) task or proposal section it addresses.
+2. **Why / which task** — reference the proposal section ([docs/proposal/](proposal/)) or the related issue.
 3. **How it was tested** — exact command run inside `make shell`, or a link to a notebook cell with the result.
 
 **Merging**

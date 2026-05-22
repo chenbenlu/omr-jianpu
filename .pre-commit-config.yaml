@@ -1,5 +1,3 @@
-# Run: pre-commit install   (once, after `make install`)
-# Hooks run on every `git commit`. To run on the whole repo: `pre-commit run --all-files`.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0

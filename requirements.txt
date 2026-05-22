@@ -1,9 +1,7 @@
-# OMR-to-Jianpu Python dependencies.
-#
-# IMPORTANT: Do NOT add torch / torchvision / torchaudio here.
-# They are preinstalled in the base image (pytorch/pytorch:2.2.0-cuda12.1-cudnn8-devel)
-# and re-pinning them via pip can silently resolve to a CPU-only wheel, disabling
-# GPU acceleration on every team member's machine.
+# Do NOT add torch / torchvision / torchaudio here. They ship preinstalled in
+# the base image (pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel) with sm_120
+# kernels; re-pinning via pip can silently resolve to a CPU-only wheel and
+# disable GPU acceleration team-wide.
 
 # --- Hugging Face stack (Vision-Encoder-Decoder backbone) ---
 transformers>=4.40,<5.0

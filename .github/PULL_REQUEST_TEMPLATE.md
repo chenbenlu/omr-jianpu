@@ -8,7 +8,7 @@ See docs/GIT_WORKFLOW.md for the full policy.
 <!-- One or two sentences. -->
 
 ## Why / which task
-<!-- Link to the CLAUDE.md task or proposal section this addresses. -->
+<!-- Reference the proposal section or the related issue. -->
 
 ## How it was tested
 <!-- Exact command(s) run inside `make shell`, or a link to a notebook cell with the result. -->

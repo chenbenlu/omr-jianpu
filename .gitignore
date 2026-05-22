@@ -100,6 +100,16 @@ docker-compose.override.yml
 Thumbs.db
 desktop.ini
 
+# ---------- AI agent / coding assistant artifacts ----------
+CLAUDE.md
+.claude/
+AGENTS.md
+GEMINI.md
+.cursorrules
+.cursor/
+.windsurfrules
+.aider*
+
 # ---------- LaTeX build artifacts (proposal lives in docs/proposal/) ----------
 *.aux
 *.bbl

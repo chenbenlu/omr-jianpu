@@ -1,6 +1,3 @@
-# OMR-to-Jianpu dev environment shortcuts.
-# All commands operate on the docker-compose service `omr-dev`.
-
 SERVICE := omr-dev
 COMPOSE := docker compose
 
@@ -35,9 +32,7 @@ restart: down up
 shell:
 	$(COMPOSE) exec $(SERVICE) bash
 
-# Runs as root because deps live in /opt/conda (owned by root by design — see Dockerfile).
-# This target exists for the "I edited requirements.txt and don't want to rebuild" workflow;
-# normal `make build` already installs everything.
+# Runs as root because deps live in /opt/conda; see Dockerfile.
 install:
 	$(COMPOSE) exec -u root $(SERVICE) uv pip install --system -r requirements.txt
 

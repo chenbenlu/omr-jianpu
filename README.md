@@ -80,6 +80,5 @@ pre-commit install   # one-time, inside the container
 
 ## Documentation index
 
-- [CLAUDE.md](CLAUDE.md) — original DevOps brief and hardware constraints
 - [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) — full Git workflow policy
 - [docs/proposal/proposal.pdf](docs/proposal/proposal.pdf) — project proposal

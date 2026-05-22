@@ -6,7 +6,6 @@ services:
     image: omr-jianpu:dev
     container_name: omr-dev
     hostname: omr-dev
-    # GPU passthrough via NVIDIA Container Toolkit (works under WSL2).
     deploy:
       resources:
         reservations:
