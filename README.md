@@ -8,6 +8,10 @@ NYCU 535354 Deep Learning final project (Track 3 — Application). Team: BEN-LU 
 
 You need WSL2 + Docker Desktop with the NVIDIA Container Toolkit, on a machine with a Blackwell GPU (RTX 5060 / 5070 / 6000).
 
+**VS Code (recommended):** open the repo, then "Reopen in Container" — picks up [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json), builds the image, attaches as `omr`, and installs the pre-commit hooks for you.
+
+**CLI:**
+
 ```bash
 make build       # ~10 min first time (pulls ~6 GB CUDA base + installs deps)
 make up          # start the dev container in the background
@@ -43,6 +47,7 @@ If `make build` ever produces a multi-tens-of-GB image, the most likely cause is
 ```
 .
 ├── Dockerfile, docker-compose.yml, Makefile     # dev environment
+├── .devcontainer/                                # VS Code Dev Containers config
 ├── requirements.txt                              # Python deps (no torch — comes from base image)
 ├── .dockerignore, .gitignore                     # keep build context small; keep repo clean
 ├── .pre-commit-config.yaml                       # ruff + black + nbstripout + large-file guard

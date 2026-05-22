@@ -1,0 +1,56 @@
+// VS Code Dev Containers config. Reuses ../docker-compose.yml as the source of
+// truth for the container (GPU passthrough, ports, bind mount). VS Code attaches
+// as the non-root `omr` user defined in the Dockerfile.
+{
+  "name": "omr-jianpu",
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "omr-dev",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "omr",
+  "shutdownAction": "stopCompose",
+
+  // Surfaced in the VS Code "Ports" panel. Compose already publishes them to
+  // localhost; this just labels them in the UI.
+  "forwardPorts": [8888, 6006, 8501],
+  "portsAttributes": {
+    "8888": { "label": "JupyterLab", "onAutoForward": "ignore" },
+    "6006": { "label": "TensorBoard", "onAutoForward": "ignore" },
+    "8501": { "label": "Streamlit", "onAutoForward": "ignore" }
+  },
+
+  // Runs once after the container is created. Marks the bind-mounted .git as
+  // safe (different UID on the host vs. container can otherwise trigger
+  // "detected dubious ownership"), then installs the pre-commit hooks.
+  "postCreateCommand": "git config --global --add safe.directory /workspace && pre-commit install --install-hooks",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "charliermarsh.ruff",
+        "ms-python.black-formatter",
+        "ms-azuretools.vscode-docker",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml",
+        "GitHub.vscode-pull-request-github"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/conda/bin/python",
+        "python.terminal.activateEnvironment": false,
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports.ruff": "explicit"
+          }
+        },
+        "files.eol": "\n",
+        "files.insertFinalNewline": true,
+        "files.trimTrailingWhitespace": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}
