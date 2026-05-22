@@ -1,0 +1,40 @@
+\section{Project Overview}
+\label{section:intro}
+
+\subsection{Profile}
+% Please create a brief profile of your project. You may want to discuss the following aspects
+
+% \paragraph{Track: 1. Algorithm / 2. Dataset and Benchmark / 3. Application}
+\paragraph{Track: 3. Application}
+
+% An absract of about 4-8 sentences describing the overarching goal of your project
+\paragraph{Abstract and project goal:}
+This project proposes an end-to-end deep learning approach to directly translate images of printed staff notation into numbered musical notation (Jianpu). While Optical Music Recognition (OMR) has seen significant advancements, most existing systems focus on digitizing Western notation into intermediate formats like MusicXML or MIDI. Our model employs an Encoder-Decoder architecture to bypass these intermediate steps, directly outputting an array of semantic tokens that represent Jianpu. By avoiding multi-stage pipelines and rule-based heuristics, we aim to reduce cascading errors. The overarching goal is to streamline the transcription process, creating a practical and highly efficient tool for musicians who primarily rely on numbered notation for performance and rehearsal.
+
+% A short sentence describing your project
+\paragraph{TL;DR (``Too Long; Didn't Read"):}
+An end-to-end Encoder-Decoder OMR system that directly converts printed sheet music images into Jianpu semantic tokens, eliminating the need for intermediate format conversions.
+
+\subsection{Motivation}
+% Please motivate your topic by highlighting why you'd like to work on this project. Specifically, please describe the following aspects: 
+% \begin{itemize}
+%     \item Why is the problem interesting?    
+%     \item Describe 1-3 most critical challenges that you can think of regarding this RL problem. Please write them down clearly as ``Challenge 1: $\cdots$"; ``Challenge 2: $\cdots$."    
+%     \item Justify why the problem remains open or unsolved? Please also name a few most relevant prior works (e.g., 2-3 papers published in the last 2 years and 2-3 seminal papers in that field) as a justification. 
+%     \item Specify which work(s) is the state-of-the-art method in your opinion.
+% \end{itemize}
+Converting standard five-line staff notation to numbered musical notation is a tedious yet essential task. In traditional Chinese music clubs and ensembles, Jianpu is a standard for sight-reading and performance. An automated, end-to-end tool that directly outputs readable Jianpu would eliminate hours of manual transcription, solving a major practical bottleneck and allowing musicians to focus on playing rather than score translation. 
+
+Despite its importance, this problem remains largely open. Current OMR research predominantly focuses on digitizing Western music notation. Seminal works \citep{calvo2020understanding} and recent open-source projects rely on multi-stage semantic segmentation coupled with heuristic rules to group notes and extract symbols. These pipelines are prone to cascading errors and are not inherently designed for cross-format translation (Staff to Jianpu). End-to-end Image-to-Sequence models for direct Jianpu generation remain a largely unexplored niche.
+
+Developing an end-to-end model for this task presents several critical challenges:
+\begin{itemize}
+    \item \textbf{Challenge 1: \textit{Bridging the 2D-to-1D Semantic Gap.}} Mapping the complex 2D spatial arrangement of musical symbols (such as chords, slurs, and harmonics) on a staff to a flat 1D sequence of Jianpu semantic tokens requires robust spatial and sequence modeling capabilities.
+    
+    \item \textbf{Challenge 2: \textit{Direct Translation without Intermediate Representations.}} Bypassing intermediate formats means the model must implicitly learn music theory and alignment rules purely from visual data, without relying on explicit heuristic programming.
+    
+    \item \textbf{Challenge 3: \textit{Dataset Limitations.}} Since large-scale, paired datasets for Staff-to-Jianpu translation are scarce, the model must be trained effectively on synthetic or carefully curated printed sheet music, ensuring it generalizes well across different printed styles while avoiding the extreme variations of handwritten scores.
+\end{itemize}
+
+Regarding the state-of-the-art methodology, Oemer represents a strong open-source baseline for printed sheet music OMR, achieving high accuracy through UNet-based semantic segmentation \citep{oemer2023}. However, for end-to-end sequence generation tasks, Transformer-based Image-to-Text architectures (such as vision-encoder-decoder models like TrOCR) represent the state-of-the-art methodology, which we aim to adapt and evaluate for this specific music translation task.
+

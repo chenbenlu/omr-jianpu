@@ -1,0 +1,15 @@
+\section{Methodology (Optional)}
+\label{section:algorithm}
+% Please use one paragraph to explain your high-level idea of the solution.
+Our proposed solution employs a Vision-Encoder-Decoder architecture to achieve an end-to-end translation from printed sheet music images to numbered musical notation (Jianpu) token sequences. Specifically, the model ingests a 2D image of a musical score and processes it through a visual encoder (such as a Vision Transformer or a deep Convolutional Neural Network like ResNet) to extract rich, dense spatial feature representations. These extracted visual features are subsequently passed to a Transformer-based decoder, which leverages cross-attention mechanisms to autoregressively predict a 1D sequence of custom Jianpu semantic tokens. By adopting this unified framework, the network implicitly learns both the intricate spatial relationships of standard Western musical symbols (e.g., pitches, rhythms, and chords) and the underlying music theory required for translation, entirely bypassing the need for intermediate formats or explicit, hard-coded heuristic rules.
+
+% If possible, draw an illustrative diagram to describe your high-level idea. 
+% Use the following figure block to insert architecture diagram (e.g., architecture.png or .pdf).
+\begin{figure}[htbp]
+    \centering
+    % \includegraphics[width=0.8\textwidth]{your_diagram_filename.png} % this line for import figure
+    \vspace{3cm} % This is a placeholder space. Please remove this line once you insert your image.
+    \caption{description of Figure 1}
+    \label{fig:architecture}
+\end{figure}
+

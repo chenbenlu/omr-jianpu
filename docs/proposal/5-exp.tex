@@ -1,0 +1,25 @@
+\section{Experimental Results}
+\label{section:exp}
+\subsection{Evaluation of Baseline Methods}
+\label{section:exp:baseline}
+
+At the current proposal stage, we are actively constructing our custom synthetic dataset (Staff-to-Jianpu image-sequence pairs) and configuring the baseline models. We plan to conduct our preliminary experiments by evaluating the classical Image-to-Sequence baseline (CRNN) and the modern vision-language baseline (TrOCR) on our generated validation set.
+
+To rigorously assess the baseline performance, we will report the Symbol Error Rate (SER) and the Sequence-level Exact Match Rate. The expected format for our preliminary baseline evaluation is presented in Table \ref{table:baseline_results}. 
+
+\begin{table}[htbp]
+\centering
+\caption{Preliminary evaluation of baseline methods on the synthetic validation set.}
+\label{table:baseline_results}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{Symbol Error Rate (SER) $\downarrow$} & \textbf{Exact Match Rate $\uparrow$} \\
+\midrule
+Baseline 1: Oemer (with heuristic converter) & TBD & TBD \\
+Baseline 2: CRNN (ResNet + RNN + CTC) & TBD & TBD \\
+Baseline 3: TrOCR (ViT + Transformer) & TBD & TBD \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These preliminary results will serve as a foundation for designing and tuning our proposed end-to-end architecture. We anticipate that the Transformer-based baseline (TrOCR) will outperform the CTC-based baseline (CRNN) due to its superior sequence modeling capability, which is crucial for capturing the underlying musical syntax and alignment rules without explicit programming.

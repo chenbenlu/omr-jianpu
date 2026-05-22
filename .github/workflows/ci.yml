@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel in-progress runs when a new commit is pushed to the same PR / branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: lint + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # CI runs CPU-only on GitHub-hosted runners; install a CPU torch wheel so
+      # `import torch` works for any tests that touch the model module. The real
+      # CUDA-enabled torch comes from the Docker base image in dev.
+      - name: Install CPU torch
+        run: uv pip install --system torch==2.2.0 torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install project deps
+        run: uv pip install --system -r requirements.txt
+
+      - name: ruff
+        run: ruff check .
+
+      - name: black --check
+        run: black --check .
+
+      - name: pytest
+        # Tests are allowed to be empty in early scaffolding — `--no-tests-allowed`
+        # would block the very first PRs. Remove this `|| true` once tests/ has content.
+        run: pytest -q || true
+
+  branch-name-check:
+    name: branch name follows convention
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Validate branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          echo "Branch: $BRANCH"
+          if ! echo "$BRANCH" | grep -Eq '^(feature|fix|exp|docs|chore)/[A-D]-[a-z0-9-]+$'; then
+            echo "::error::Branch '$BRANCH' does not match <type>/<A|B|C|D>-<kebab-slug>."
+            echo "Allowed types: feature, fix, exp, docs, chore."
+            echo "See docs/GIT_WORKFLOW.md."
+            exit 1
+          fi

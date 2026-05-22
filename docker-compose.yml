@@ -1,0 +1,36 @@
+services:
+  omr-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omr-jianpu:dev
+    container_name: omr-dev
+    hostname: omr-dev
+    # GPU passthrough via NVIDIA Container Toolkit (works under WSL2).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # PyTorch DataLoader workers need more shared memory than Docker's 64MB default.
+    shm_size: '8gb'
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    ports:
+      - "8888:8888"   # JupyterLab
+      - "6006:6006"   # TensorBoard
+      - "8501:8501"   # Streamlit
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTHONPATH=/workspace
+    tty: true
+    stdin_open: true
+    restart: unless-stopped

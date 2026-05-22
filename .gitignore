@@ -1,0 +1,119 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.installed.cfg
+*.manifest
+*.spec
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# uv
+.uv-cache/
+uv.lock.tmp
+
+# ---------- Testing / linting ----------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+*.ipynb_meta
+profile_default/
+ipython_config.py
+
+# ---------- PyTorch / ML model weights ----------
+# Do not commit large binary artifacts.
+*.pth
+*.pt
+*.safetensors
+*.bin
+*.ckpt
+*.onnx
+*.tflite
+*.pkl
+*.joblib
+
+# ---------- Datasets ----------
+# Keep the data/ directory structure (via .gitkeep) but ignore its contents.
+data/raw/
+data/processed/
+data/external/
+data/interim/
+*.tfrecord
+*.lmdb
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.parquet
+*.arrow
+*.feather
+
+# ---------- Experiment outputs ----------
+runs/
+logs/
+wandb/
+mlruns/
+outputs/
+lightning_logs/
+checkpoints/
+artifacts/
+
+# ---------- Docker ----------
+.env
+.env.local
+.env.*.local
+docker-compose.override.yml
+
+# ---------- IDE / editors ----------
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- LaTeX build artifacts (proposal lives in docs/proposal/) ----------
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+# Keep the rendered PDF.
+!docs/proposal/proposal.pdf

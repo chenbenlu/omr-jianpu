@@ -1,0 +1,9 @@
+# Keep the build context minimal — the Dockerfile only consumes requirements.txt.
+# Without this, .git/ and large dataset / proposal artifacts would be sent to the
+# Docker daemon on every build (slow, and risks bumping into BuildKit limits).
+
+# Ignore everything by default, then allow only what the Dockerfile needs.
+*
+!Dockerfile
+!.dockerignore
+!requirements.txt
