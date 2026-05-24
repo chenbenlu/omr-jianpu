@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import torch
@@ -7,8 +8,15 @@ from torch.utils.data import DataLoader
 
 from src.data.augmentation import get_eval_augmentation, get_train_augmentation
 from src.data.dataset import PrIMuSDataset
-from src.data.splits import discover_sample_ids, find_corpus_root, split_sample_ids
+from src.data.splits import (
+    discover_sample_ids,
+    filter_overlong,
+    find_corpus_root,
+    split_sample_ids,
+)
 from src.data.vocabulary import Vocabulary
+
+_logger = logging.getLogger(__name__)
 
 
 def collate_fn(batch: list[dict]) -> dict[str, torch.Tensor]:
@@ -57,6 +65,22 @@ def create_dataloaders(
     sample_ids = discover_sample_ids(corpus_root)
     if not sample_ids:
         raise ValueError(f"No valid PrIMuS samples found in {corpus_root}")
+
+    # Filter before splitting so the seeded shuffle is over the kept set; this
+    # keeps splits reproducible across runs with the same dataset on disk.
+    # max_tokens = max_seq_len - 1 reserves one slot for EOS (no BOS in labels).
+    max_tokens = max_seq_len - 1
+    sample_ids, dropped = filter_overlong(corpus_root, sample_ids, max_tokens)
+    if dropped:
+        _logger.warning(
+            "Filtered %d sample(s) with >%d semantic tokens "
+            "(would not fit max_seq_len=%d). Examples: %s",
+            len(dropped),
+            max_tokens,
+            max_seq_len,
+            dropped[:5],
+        )
+
     splits = split_sample_ids(sample_ids, train_ratio, val_ratio, seed)
 
     vocab_file = Path(vocab_path) if vocab_path else corpus_root / "vocab.json"

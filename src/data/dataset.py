@@ -58,9 +58,12 @@ class PrIMuSDataset(Dataset):
         text = semantic_path.read_text(encoding="utf-8").strip()
         tokens = [t.strip() for t in text.split("\t") if t.strip()]
 
-        # Truncate to leave room for BOS + EOS
-        tokens = tokens[: self.max_seq_len - 2]
-        ids = [Vocabulary.BOS_ID] + self.vocabulary.encode(tokens) + [Vocabulary.EOS_ID]
+        # Labels are `tokens + EOS + PAD…` — no BOS. HF VisionEncoderDecoderModel
+        # prepends BOS via `shift_tokens_right` using decoder_start_token_id.
+        # Truncation here is defensive; create_dataloaders filters overlong
+        # samples upstream so this branch is unreachable from that path.
+        tokens = tokens[: self.max_seq_len - 1]
+        ids = self.vocabulary.encode(tokens) + [Vocabulary.EOS_ID]
         label_length = len(ids)
 
         ids += [Vocabulary.PAD_ID] * (self.max_seq_len - label_length)

@@ -32,12 +32,18 @@ from src.data import PrIMuSDataset, Vocabulary, create_dataloaders, collate_fn
 ```python
 {
   "pixel_values":   torch.Tensor,  # (B, 3, 128, 1024)  float32, TrOCR-normalized
-  "labels":         torch.Tensor,  # (B, L)              int64,  BOS + tokens + EOS + PAD
+  "labels":         torch.Tensor,  # (B, L)              int64,  tokens + EOS + PAD (no BOS)
   "attention_mask": torch.Tensor,  # (B, L)              int64,  1 = real token, 0 = PAD
-  "label_lengths":  torch.Tensor,  # (B,)                int64,  true length incl. BOS+EOS
+  "label_lengths":  torch.Tensor,  # (B,)                int64,  true length incl. EOS (no BOS)
 }
 # Image normalization: mean = std = (0.5, 0.5, 0.5)  [TrOCR convention]
 ```
+
+**Decoder-input ownership.** `labels` does not include `BOS`. Member B must set
+`model.config.decoder_start_token_id = Vocabulary.BOS_ID` (= 1) so HuggingFace
+`VisionEncoderDecoderModel` calls `shift_tokens_right` and prepends `BOS` to
+produce `decoder_input_ids`. Do not pass these labels through a manual shift —
+that would yield a double-BOS prefix.
 
 ## Dataset format
 
@@ -95,10 +101,18 @@ print(batch['label_lengths'])
 ## Design notes
 
 - Images are resized with aspect-ratio preservation (`LongestMaxSize`) and
-  gray-fill padded (`fill=127`, top-left anchor) to a fixed `(3, 128, 1024)`.
+  white-paper padded (`fill=255`, top-left anchor) to a fixed `(3, 128, 1024)`.
+  After TrOCR normalization the padded region maps to `+1.0`, matching the
+  unprinted paper background so the encoder does not have to model "padding
+  strip" as a distinct visual feature.
 - Splits default to 80 % train / 10 % val / 10 % test by sample-ID seeded shuffle
   (`seed=42`). `splits.py` owns both the shuffle and the `Corpus/` subdirectory
   detection so `create_dataloaders` stays glue-only.
+- Samples whose `.semantic` token count exceeds `max_seq_len - 1` are filtered
+  at `create_dataloaders` time (one slot is reserved for EOS). Dropped IDs are
+  logged at `WARNING` level. The truncation branch inside
+  `PrIMuSDataset.__getitem__` is defensive — it only fires for callers that
+  construct `PrIMuSDataset` directly and bypass the factory.
 - The vocabulary is built from the **training split only**; tokens that appear
   only in val/test fall through to `<UNK>`. The built vocab is cached at
   `<corpus_root>/vocab.json` (alongside the sample directories) and re-used on

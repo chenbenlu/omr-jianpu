@@ -12,6 +12,7 @@ from src.data.dataloader import collate_fn, create_dataloaders
 from src.data.dataset import PrIMuSDataset
 from src.data.splits import (
     discover_sample_ids,
+    filter_overlong,
     find_corpus_root,
     split_sample_ids,
 )
@@ -139,6 +140,21 @@ def test_split_sample_ids_seeded() -> None:
     assert c["train"] != a["train"]
 
 
+def test_filter_overlong(tmp_path: Path) -> None:
+    root = tmp_path / "primus"
+    counts = {"short": 2, "mid": 5, "long": 10}
+    for sid, n in counts.items():
+        sample_dir = root / sid
+        sample_dir.mkdir(parents=True)
+        (sample_dir / f"{sid}.semantic").write_text(
+            "\t".join(f"tok{i}" for i in range(n)), encoding="utf-8"
+        )
+
+    kept, dropped = filter_overlong(root, list(counts), max_tokens=5)
+    assert set(kept) == {"short", "mid"}
+    assert dropped == ["long"]
+
+
 # ---------------------------------------------------------------------------
 # Dataset tests
 # ---------------------------------------------------------------------------
@@ -154,8 +170,11 @@ def test_dataset_getitem(tiny_dataset: Path, built_vocab: Vocabulary) -> None:
     assert item["pixel_values"].dtype == torch.float32
     labels: torch.Tensor = item["labels"]
     length: int = item["label_length"]
-    assert labels[0].item() == Vocabulary.BOS_ID
+    # Labels are `tokens + EOS + PAD…` — no BOS. HF VED prepends BOS itself.
+    assert labels[0].item() != Vocabulary.BOS_ID
+    assert labels[0].item() == built_vocab.token_to_id[_TOKENS[0]]
     assert labels[length - 1].item() == Vocabulary.EOS_ID
+    assert length == len(_TOKENS) + 1  # tokens + EOS
     assert labels[length:].eq(Vocabulary.PAD_ID).all()
 
 
@@ -227,6 +246,35 @@ def test_create_dataloaders_vocab_saved(tiny_dataset: Path) -> None:
     assert (tiny_dataset / "vocab.json").exists()
 
 
+def test_create_dataloaders_filters_overlong(
+    tiny_dataset: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    # Add a sample whose semantic far exceeds max_seq_len-1 = 7.
+    huge_dir = tiny_dataset / "huge"
+    huge_dir.mkdir()
+    Image.new("RGB", (256, 64), color=255).save(huge_dir / "huge.png")
+    Image.new("RGB", (256, 64), color=255).save(huge_dir / "huge.jpg")
+    (huge_dir / "huge.semantic").write_text(
+        "\t".join(f"tok{i}" for i in range(50)), encoding="utf-8"
+    )
+
+    with caplog.at_level(logging.WARNING, logger="src.data.dataloader"):
+        loaders = create_dataloaders(
+            tiny_dataset,
+            batch_size=2,
+            num_workers=0,
+            pin_memory=False,
+            max_seq_len=8,
+        )
+
+    for loader in loaders.values():
+        assert "huge" not in loader.dataset.sample_ids
+
+    assert any("huge" in rec.getMessage() for rec in caplog.records)
+
+
 # ---------------------------------------------------------------------------
 # Augmentation tests
 # ---------------------------------------------------------------------------
@@ -246,3 +294,13 @@ def test_eval_augmentation_deterministic() -> None:
     out1 = pipe(image=img)["image"]
     out2 = pipe(image=img)["image"]
     assert torch.allclose(out1, out2)
+
+
+def test_padding_is_white_paper() -> None:
+    # 64×256 gray content; LongestMaxSize scales 2× to 128×512, leaving cols
+    # 512..1023 as pure padding. Pad fill=255 → normalized = +1.0.
+    img = np.ones((64, 256, 3), dtype=np.uint8) * 200
+    pipe = get_eval_augmentation(height=128, width=1024)
+    out = pipe(image=img)["image"]
+    pad_region = out[:, :, 700:]
+    assert torch.allclose(pad_region, torch.ones_like(pad_region), atol=1e-5)

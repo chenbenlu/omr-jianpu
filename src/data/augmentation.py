@@ -15,7 +15,7 @@ def _resize_and_pad(height: int, width: int) -> list[A.BasicTransform]:
             min_height=height,
             min_width=width,
             border_mode=cv2.BORDER_CONSTANT,
-            fill=127,
+            fill=255,
             position="top_left",
         ),
     ]
@@ -42,13 +42,13 @@ def get_train_augmentation(
             A.Perspective(
                 scale=(0.02, 0.05),
                 border_mode=cv2.BORDER_CONSTANT,
-                fill=127,
+                fill=255,
                 p=0.3,
             ),
             A.Rotate(
                 limit=2,
                 border_mode=cv2.BORDER_CONSTANT,
-                fill=127,
+                fill=255,
                 p=0.4,
             ),
             *_normalize_and_tensor(mean, std),
