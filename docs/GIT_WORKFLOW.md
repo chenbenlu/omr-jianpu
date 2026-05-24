@@ -2,12 +2,15 @@
 
 A lightweight GitHub Flow tuned for our 4-person split.
 
-| Letter | Member | Module                | Path        |
-| ------ | ------ | --------------------- | ----------- |
-| A      | TBD    | Data Engineering      | `src/data`     |
-| B      | TBD    | Model Training        | `src/model`    |
-| C      | TBD    | Post-processing       | `src/postproc` |
-| D      | TBD    | Integration & Deploy  | `src/deploy`   |
+| Letter | Member       | Module                | Path        |
+| ------ | ------------ | --------------------- | ----------- |
+| A      | @chenbenlu   | Data Engineering      | `src/data`     |
+| B      | TBD          | Model Training        | `src/model`    |
+| C      | TBD          | Post-processing       | `src/postproc` |
+| D      | TBD          | Integration & Deploy  | `src/deploy`   |
+
+Review routing is encoded in [.github/CODEOWNERS](../.github/CODEOWNERS); members claim
+their handle there in a `chore/<owner>-claim-codeowner` PR when they onboard.
 
 `main` is the only long-lived branch. Everything else is short-lived and merges back via PR.
 
@@ -54,7 +57,9 @@ Rules:
 **Merging**
 - **Squash-merge** into `main`. Each feature lands as one atomic commit on the trunk; the squashed commit message follows Conventional Commits (`feat(data): ...`, `fix(model): ...`).
 - Branch is auto-deleted on merge.
-- Direct pushes to `main` are forbidden — protect the branch on GitHub with "Require a pull request before merging" + "Require approvals = 1".
+- Direct pushes to `main` are blocked by the repository ruleset at
+  [.github/rulesets/main-protection.json](../.github/rulesets/main-protection.json);
+  setup instructions live in [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md).
 
 **Conflicts**
 - Author owns the rebase. If the conflict touches another module, ping that owner on the PR before resolving so you don't silently overwrite their intent.

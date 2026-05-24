@@ -48,9 +48,7 @@ jobs:
         run: black --check .
 
       - name: pytest
-        # Tests are allowed to be empty in early scaffolding — `--no-tests-allowed`
-        # would block the very first PRs. Remove this `|| true` once tests/ has content.
-        run: pytest -q || true
+        run: pytest -q
 
   branch-name-check:
     name: branch name follows convention
