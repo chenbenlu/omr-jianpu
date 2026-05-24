@@ -1,0 +1,39 @@
+# CODEOWNERS — auto-routes review requests per Module Map in docs/GIT_WORKFLOW.md.
+#
+# Format: <pattern>  <@github-handle> [@github-handle …]
+# The last matching pattern wins.
+#
+# Members B / C / D have not onboarded yet; until they add their GitHub handles
+# below, @chenbenlu is listed as a placeholder so PRs are not blocked. Replace
+# the placeholders in a `chore/<owner>-claim-codeowner` PR when joining.
+
+# Repo-wide fallback — at least one of these must review every PR.
+*                       @chenbenlu
+
+# Module ownership (Member A — Data)
+/src/data/              @chenbenlu
+/tests/test_data.py     @chenbenlu
+
+# Module ownership (Member B — Model). TODO: replace with B's handle.
+/src/model/             @chenbenlu
+/tests/test_model.py    @chenbenlu
+
+# Module ownership (Member C — Post-processing). TODO: replace with C's handle.
+/src/postproc/          @chenbenlu
+/tests/test_postproc.py @chenbenlu
+
+# Module ownership (Member D — Integration & Deploy). TODO: replace with D's handle.
+/src/deploy/            @chenbenlu
+/notebooks/             @chenbenlu
+
+# Repo-wide infrastructure (Docker, CI, configs, workflow docs) — any owner can
+# approve, but the change must call out repo-wide impact in the PR description.
+/.github/               @chenbenlu
+/.devcontainer/         @chenbenlu
+/docs/                  @chenbenlu
+/configs/               @chenbenlu
+Dockerfile              @chenbenlu
+docker-compose.yml      @chenbenlu
+Makefile                @chenbenlu
+requirements.txt        @chenbenlu
+.pre-commit-config.yaml @chenbenlu
