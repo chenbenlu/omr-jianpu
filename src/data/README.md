@@ -115,6 +115,26 @@ print(batch['label_lengths'])
 "
 ```
 
+### Real-dataset numbers (Camera-PrIMuS, 2026-05-24, `batch_size=8, num_workers=0`)
+
+| metric | value |
+|---|---|
+| total samples | 87,678 |
+| filtered for token-count > `max_seq_len - 1` (= 511) | 0 |
+| split sizes (train / val / test) | 70,142 / 8,767 / 8,769 |
+| vocab size (incl. 4 specials) | 1,716 |
+| `create_dataloaders` cold (vocab build + save) | 2.0 s |
+| `create_dataloaders` warm (vocab load from cache) | 1.5 s |
+| first train batch (cold dataset cache) | 0.03 s |
+| `pixel_values` range observed in batch | `[-0.88, +1.00]` |
+| `label_lengths` in 8-sample batch | min 17, max 35, mean 25 |
+
+Notes for Member B: the warm path's 1.5 s is dominated by `filter_overlong`'s
+pass over 87 k `.semantic` files. With the current `max_seq_len=512` no sample
+is ever filtered, but the read still happens every time — fine for one-off
+DataLoader construction at the start of training, worth caching if you call
+`create_dataloaders()` repeatedly.
+
 ## Design notes
 
 - Images are resized with aspect-ratio preservation (`LongestMaxSize`) and
