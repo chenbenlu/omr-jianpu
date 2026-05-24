@@ -11,6 +11,9 @@ class Vocabulary:
     EOS_ID: int = 2
     UNK_ID: int = 3
     SPECIAL_TOKENS: list[str] = ["<PAD>", "<BOS>", "<EOS>", "<UNK>"]
+    # IDs stripped by decode(skip_special_tokens=True). UNK is preserved — it
+    # is a real model prediction signal, not a structural token.
+    SKIP_ON_DECODE_IDS: frozenset[int] = frozenset({PAD_ID, BOS_ID, EOS_ID})
 
     def __init__(self) -> None:
         self._token_to_id: dict[str, int] = {
@@ -40,7 +43,13 @@ class Vocabulary:
     def encode(self, tokens: list[str]) -> list[int]:
         return [self._token_to_id.get(tok, self.UNK_ID) for tok in tokens]
 
-    def decode(self, ids: list[int]) -> list[str]:
+    def decode(self, ids: list[int], skip_special_tokens: bool = False) -> list[str]:
+        if skip_special_tokens:
+            return [
+                self._id_to_token.get(i, "<UNK>")
+                for i in ids
+                if i not in self.SKIP_ON_DECODE_IDS
+            ]
         return [self._id_to_token.get(i, "<UNK>") for i in ids]
 
     def save(self, path: Path) -> None:

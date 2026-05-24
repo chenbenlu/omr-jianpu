@@ -74,6 +74,29 @@ def test_vocabulary_encode_decode_roundtrip(built_vocab: Vocabulary) -> None:
     assert recovered == tokens
 
 
+def test_vocabulary_decode_skip_special_tokens(built_vocab: Vocabulary) -> None:
+    music_ids = built_vocab.encode(["note-C4_eighth", "barline"])
+    framed = [Vocabulary.BOS_ID, *music_ids, Vocabulary.EOS_ID, Vocabulary.PAD_ID]
+    assert built_vocab.decode(framed) == [
+        "<BOS>",
+        "note-C4_eighth",
+        "barline",
+        "<EOS>",
+        "<PAD>",
+    ]
+    assert built_vocab.decode(framed, skip_special_tokens=True) == [
+        "note-C4_eighth",
+        "barline",
+    ]
+    # UNK survives — it is a real prediction, not a structural token.
+    with_unk = [Vocabulary.BOS_ID, Vocabulary.UNK_ID, *music_ids, Vocabulary.EOS_ID]
+    assert built_vocab.decode(with_unk, skip_special_tokens=True) == [
+        "<UNK>",
+        "note-C4_eighth",
+        "barline",
+    ]
+
+
 def test_vocabulary_unk(built_vocab: Vocabulary) -> None:
     ids = built_vocab.encode(["NONEXISTENT_TOKEN"])
     assert ids[0] == Vocabulary.UNK_ID
@@ -213,7 +236,7 @@ def test_collate_fn_padding(tiny_dataset: Path, built_vocab: Vocabulary) -> None
     batch = collate_fn([item_short, item_long])
     max_len = item_long["label_length"]
     assert batch["labels"].shape == (2, max_len)
-    assert batch["attention_mask"].shape == (2, max_len)
+    assert batch["decoder_attention_mask"].shape == (2, max_len)
     assert batch["label_lengths"].tolist() == [
         item_short["label_length"],
         item_long["label_length"],
@@ -221,7 +244,7 @@ def test_collate_fn_padding(tiny_dataset: Path, built_vocab: Vocabulary) -> None
 
     short_len = item_short["label_length"]
     # Positions after short EOS must be masked out
-    assert batch["attention_mask"][0, short_len:].eq(0).all()
+    assert batch["decoder_attention_mask"][0, short_len:].eq(0).all()
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +260,9 @@ def test_create_dataloaders(tiny_dataset: Path) -> None:
     batch = next(iter(loaders["train"]))
     assert batch["pixel_values"].ndim == 4
     assert batch["labels"].ndim == 2
-    assert batch["attention_mask"].shape == batch["labels"].shape
+    assert batch["decoder_attention_mask"].shape == batch["labels"].shape
     assert batch["label_lengths"].ndim == 1
+    assert "attention_mask" not in batch  # renamed; guard against regression
 
 
 def test_create_dataloaders_vocab_saved(tiny_dataset: Path) -> None:

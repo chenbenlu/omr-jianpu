@@ -35,14 +35,17 @@ def collate_fn(batch: list[dict]) -> dict[str, torch.Tensor]:
         padded.append(lbl[:max_len])
     labels = torch.stack(padded)
 
-    attention_mask = torch.zeros_like(labels)
+    # decoder_attention_mask, not encoder. The ViT encoder consumes pixel_values
+    # directly and needs no attention mask. HF VisionEncoderDecoderModel takes
+    # this as the `decoder_attention_mask` kwarg.
+    decoder_attention_mask = torch.zeros_like(labels)
     for i, length in enumerate(label_lengths):
-        attention_mask[i, :length] = 1
+        decoder_attention_mask[i, :length] = 1
 
     return {
         "pixel_values": pixel_values,
         "labels": labels,
-        "attention_mask": attention_mask,
+        "decoder_attention_mask": decoder_attention_mask,
         "label_lengths": label_lengths,
     }
 

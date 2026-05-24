@@ -24,26 +24,43 @@ from src.data import PrIMuSDataset, Vocabulary, create_dataloaders, collate_fn
 
 - `create_dataloaders(data_dir, ...)` — returns `{"train", "val", "test"}` DataLoaders.
 - `PrIMuSDataset(root, vocab, sample_ids, transform=, use_camera=, max_seq_len=)` — single-split dataset.
-- `Vocabulary` — `build`, `load`, `save`, `load_or_build`, `encode`, `decode`. Exposes `PAD_ID=0`, `BOS_ID=1`, `EOS_ID=2`, `UNK_ID=3`.
+- `Vocabulary` — `build`, `load`, `save`, `load_or_build`, `encode`, `decode(ids, skip_special_tokens=False)`. Exposes `PAD_ID=0`, `BOS_ID=1`, `EOS_ID=2`, `UNK_ID=3`. Pass `skip_special_tokens=True` at inference time to drop PAD/BOS/EOS (UNK is preserved as a real prediction).
 - `collate_fn(batch)` — pads to batch-max and produces the schema below.
 
 ## Batch schema (frozen contract)
 
 ```python
 {
-  "pixel_values":   torch.Tensor,  # (B, 3, 128, 1024)  float32, TrOCR-normalized
-  "labels":         torch.Tensor,  # (B, L)              int64,  tokens + EOS + PAD (no BOS)
-  "attention_mask": torch.Tensor,  # (B, L)              int64,  1 = real token, 0 = PAD
-  "label_lengths":  torch.Tensor,  # (B,)                int64,  true length incl. EOS (no BOS)
+  "pixel_values":           torch.Tensor,  # (B, 3, 128, 1024)  float32, TrOCR-normalized
+  "labels":                 torch.Tensor,  # (B, L)              int64,  tokens + EOS + PAD (no BOS)
+  "decoder_attention_mask": torch.Tensor,  # (B, L)              int64,  1 = real token, 0 = PAD
+  "label_lengths":          torch.Tensor,  # (B,)                int64,  true length incl. EOS (no BOS)
 }
 # Image normalization: mean = std = (0.5, 0.5, 0.5)  [TrOCR convention]
 ```
 
-**Decoder-input ownership.** `labels` does not include `BOS`. Member B must set
-`model.config.decoder_start_token_id = Vocabulary.BOS_ID` (= 1) so HuggingFace
-`VisionEncoderDecoderModel` calls `shift_tokens_right` and prepends `BOS` to
-produce `decoder_input_ids`. Do not pass these labels through a manual shift —
-that would yield a double-BOS prefix.
+The mask is decoder-side — the ViT encoder consumes `pixel_values` directly
+and needs no mask. Pass it through HuggingFace as the `decoder_attention_mask`
+kwarg. `model(**batch)` does **not** work because `label_lengths` is not an
+HF kwarg; pop it (or pass keys individually) before forwarding the batch.
+
+### HF VisionEncoderDecoderModel wiring (Member B)
+
+Five config keys must be set before the first `forward`, otherwise loss masking
+and generation break in subtle ways:
+
+```python
+from src.data import Vocabulary
+
+model.config.pad_token_id           = Vocabulary.PAD_ID   # 0 — masks PAD positions in CE loss
+model.config.decoder_start_token_id = Vocabulary.BOS_ID   # 1 — HF prepends this via shift_tokens_right
+model.config.eos_token_id           = Vocabulary.EOS_ID   # 2 — stops generate() early
+model.config.vocab_size             = len(vocab)          # includes the four specials
+model.decoder.resize_token_embeddings(len(vocab))         # only if loading a pretrained decoder
+```
+
+Do **not** pass `labels` through a manual `shift_tokens_right`. HF does the
+shift internally; double-shifting yields `[BOS, BOS, tok1, …]`.
 
 ## Dataset format
 
