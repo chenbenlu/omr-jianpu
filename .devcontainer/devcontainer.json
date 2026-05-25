@@ -9,6 +9,10 @@
   "remoteUser": "omr",
   "shutdownAction": "stopCompose",
 
+  "containerEnv": {
+  "CLAUDE_CONFIG_DIR": "/workspace/.claude"
+},
+
   // Surfaced in the VS Code "Ports" panel. Compose already publishes them to
   // localhost; this just labels them in the UI.
   "forwardPorts": [8888, 6006, 8501],
@@ -21,7 +25,7 @@
   // Runs once after the container is created. Marks the bind-mounted .git as
   // safe (different UID on the host vs. container can otherwise trigger
   // "detected dubious ownership"), then installs the pre-commit hooks.
-  "postCreateCommand": "git config --global --add safe.directory /workspace && pre-commit install --install-hooks",
+  "postCreateCommand": "git config --global --add safe.directory /workspace && pre-commit install --install-hooks && if [ -d /workspace/.claude ]; then curl -fsSL https://claude.ai/install.sh | bash; fi",
 
   "customizations": {
     "vscode": {
@@ -34,7 +38,8 @@
         "ms-azuretools.vscode-docker",
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
-        "GitHub.vscode-pull-request-github"
+        "GitHub.vscode-pull-request-github",
+        "anthropic.claude-code"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/opt/conda/bin/python",

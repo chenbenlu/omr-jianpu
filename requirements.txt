@@ -20,6 +20,12 @@ einops>=0.7
 # --- Music utilities (Member C: Jianpu mapping) ---
 music21>=9.1
 
+# --- Synthetic score generation (Member A) ---
+# verovio is pinned exactly: minor releases change glyph spacing, which would
+# silently drift the pre-rendered val/test PNGs.
+verovio==6.2.1
+cairosvg>=2.7,<3.0
+
 # --- Training infrastructure (Member B) ---
 tensorboard>=2.16
 wandb>=0.17
