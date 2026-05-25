@@ -1,12 +1,14 @@
 # OMR-to-Jianpu
 
-End-to-end deep-learning Optical Music Recognition. A Vision-Encoder-Decoder translates printed staff-notation images directly into [Jianpu](https://en.wikipedia.org/wiki/Numbered_musical_notation) (numbered notation) semantic tokens — no MusicXML, no MIDI, no rule-based heuristics.
+End-to-end deep-learning Optical Music Recognition. A Vision-Encoder-Decoder translates printed monophonic staff-notation images into structured semantic tokens, which downstream are mapped to [Jianpu](https://en.wikipedia.org/wiki/Numbered_musical_notation) (numbered notation) — no MusicXML, no MIDI, no rule-based heuristics in the model path.
+
+The image source is **100% synthetic**: music21 builds a Stream → verovio renders it to PNG. Labels are emitted directly from the generator as four parallel decoupled streams (`type` / `pitch` / `rhythm` / `attribute`) so we can score pitch and rhythm accuracy independently when comparing Vision-Encoder-Decoder architectures.
 
 NYCU 535354 Deep Learning final project (Track 3 — Application). Team: BEN-LU CHEN, CHUN-JUI HSU, MENG-XI LIN, JIAN-AN ZHU. See [docs/proposal/proposal.pdf](docs/proposal/proposal.pdf) for the full proposal.
 
 ## Quick start
 
-You need WSL2 + Docker Desktop with the NVIDIA Container Toolkit, on a machine with a Blackwell GPU (RTX 5060 / 5070 / 6000).
+You need WSL2 + Docker Desktop with the NVIDIA Container Toolkit, on a machine with a Blackwell GPU (RTX 5060 / 5070).
 
 **VS Code (recommended):** open the repo, then "Reopen in Container" — picks up [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json), builds the image, attaches as `omr`, and installs the pre-commit hooks for you.
 
@@ -55,12 +57,12 @@ If `make build` ever produces a multi-tens-of-GB image, the most likely cause is
 │   ├── workflows/ci.yml                          # ruff + black + pytest + branch-name check
 │   └── PULL_REQUEST_TEMPLATE.md
 ├── src/
-│   ├── data/         # Member A — Camera-PrIMuS parsing, augmentation, DataLoaders
-│   ├── model/        # Member B — Vision-Encoder-Decoder, losses, training loop
-│   ├── postproc/     # Member C — semantic-token → Jianpu mapping
+│   ├── data/         # Member A — synthetic monophonic score generation (music21 + verovio) + multi-encoder DataLoaders
+│   ├── model/        # Member B — Vision-Encoder-Decoder (ViT/ResNet encoder + Transformer decoder), losses, training loop
+│   ├── postproc/     # Member C — decoupled (type/pitch/rhythm/attribute) tokens → Jianpu mapping
 │   └── deploy/       # Member D — pipeline glue + Streamlit UI
 ├── configs/          # Hydra configs land here
-├── data/             # gitignored — datasets live here at runtime
+├── data/             # gitignored — pre-rendered val/test PNGs land under data/synthetic/{val,test}/ at runtime
 ├── notebooks/        # exploratory work; not on the import path
 ├── tests/
 └── docs/
