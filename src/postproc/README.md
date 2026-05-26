@@ -121,29 +121,51 @@ finishes in ~0.18 s on one CPU core. A pure-Python reference DP
 
 ## Usage
 
+### Render a single sample (Member D — Streamlit UI)
+
 ```python
 from src.data import MelodyGenerator, build_default_vocabs
-from src.postproc import ids_to_jianpu, evaluate_batch
+from src.postproc import ids_to_jianpu
 
-vb  = build_default_vocabs()
-gen = MelodyGenerator()
+vb     = build_default_vocabs()
+labels = MelodyGenerator().generate(seed=42, sample_idx=0).labels
+ids    = {name: vocab.encode(labels[name]) for name, vocab in vb}
 
-def encode(labels):
-    return tuple(vocab.encode(labels[name]) for name, vocab in vb)
+print(ids_to_jianpu(ids["type"], ids["pitch"], ids["rhythm"], ids["attribute"], vb))
+# [Clef: G2] [Key: D major] [Time: 4/4]
+# 1 _2 3 - | _4 5 6 7 | 1' - - -
+```
 
-# Render a generated sample.
-labels = gen.generate(seed=42, sample_idx=0).labels
-type_ids, pitch_ids, rhythm_ids, attribute_ids = encode(labels)
-print(ids_to_jianpu(type_ids, pitch_ids, rhythm_ids, attribute_ids, vb))
+### Validation loop (Member B — model training)
 
-# Validation-loop entry point — counts aggregate correctly across samples.
-gt_batch   = [encode(gen.generate(seed=1_000_000, sample_idx=i).labels)
-              for i in range(N)]
-pred_batch = run_decoder(...)   # Member B's beam/greedy decode → same shape
+Member B's decoder yields four `(B, L)` `torch.LongTensor`s per batch. Both
+`torch.Tensor` and `np.ndarray` are accepted directly — no `.tolist()` needed.
+
+```python
+from src.postproc import evaluate_batch
+
+# Per-batch in your validation step:
+#   gt_type, gt_pitch, gt_rhythm, gt_attr        — labels, shape (B, L_gt)
+#   pr_type, pr_pitch, pr_rhythm, pr_attr        — decoder.generate(...) output, shape (B, L_pr)
+
+B = pr_type.shape[0]
+gt_batch   = [(gt_type[i], gt_pitch[i], gt_rhythm[i], gt_attr[i]) for i in range(B)]
+pred_batch = [(pr_type[i], pr_pitch[i], pr_rhythm[i], pr_attr[i]) for i in range(B)]
 
 m = evaluate_batch(gt_batch=gt_batch, pred_batch=pred_batch, vocab=vb)
-print(m.ser, m.pitch_accuracy, m.rhythm_accuracy)
+log({"val/ser":         m.ser,
+     "val/pitch_acc":   m.pitch_accuracy,
+     "val/rhythm_acc":  m.rhythm_accuracy})
 ```
+
+No pre-filtering of `<PAD>` / `<BOS>` / `<EOS>` needed — `evaluate_batch`
+runs the same type-anchored decode internally on both sides. Per-head
+special-token disagreement (common early in training) is absorbed as
+`<UNK>`-coerced positions and counted as errors against the GT.
+
+Aggregate across batches by saving per-batch `EvalMetrics` and calling
+`aggregate(metrics_list)` at epoch end — it sums counts before dividing,
+which is the correct way to average SER/pitch/rhythm over the val set.
 
 ## Tests
 
