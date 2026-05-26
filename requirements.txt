@@ -20,6 +20,12 @@ einops>=0.7
 # --- Music utilities (Member C: Jianpu mapping) ---
 music21>=9.1
 
+# --- Postprocessing / metrics (Member C) ---
+# C++ Levenshtein on arbitrary hashable sequences. Used by
+# src.postproc.metrics for the DP alignment hot path Member B's validation
+# loop calls once per sample (~8,700 samples / epoch).
+rapidfuzz>=3.6
+
 # --- Synthetic score generation (Member A) ---
 # verovio is pinned exactly: minor releases change glyph spacing, which would
 # silently drift the pre-rendered val/test PNGs.
