@@ -1,0 +1,16 @@
+# Encoder ablation sweep — runs vit and resnet across three seeds.
+#
+# Usage:
+#   python -m src.model.train --multirun +sweep=encoder_ablation
+#
+# Hydra fills in `model` and `seed` from the comma-separated values below;
+# each combination becomes one job under outputs/multirun/<timestamp>/.
+defaults:
+  - override /hydra/sweeper: basic
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      model: vit,resnet
+      seed: 0,1,2
