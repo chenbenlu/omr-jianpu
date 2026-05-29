@@ -54,6 +54,33 @@ def main(cfg: DictConfig) -> None:
     )
     train_loader, val_loader = loaders["train"], loaders["val"]
 
+    # If a pre-rendered train dir is given, read PNGs from disk instead of
+    # rendering with verovio every epoch (the on-the-fly path is CPU-bound and
+    # starves the GPU). Augmentation is still applied at load time, so the
+    # training distribution is unchanged.
+    train_dir = cfg.data.get("train_dir")
+    if train_dir:
+        from torch.utils.data import DataLoader
+
+        from src.data import PreRenderedOMRDataset, collate_fn
+
+        train_ds = PreRenderedOMRDataset(
+            Path(train_dir) / "manifest.jsonl",
+            vb,
+            spec.build_train_transform(),
+            max_seq_len=cfg.data.max_seq_len,
+        )
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=cfg.data.batch_size,
+            shuffle=True,
+            drop_last=True,
+            num_workers=cfg.data.num_workers,
+            pin_memory=True,
+            persistent_workers=cfg.data.num_workers > 0,
+            collate_fn=collate_fn,
+        )
+
     optimizer = hydra.utils.instantiate(cfg.optim.optimizer, params=model.parameters())
     total_steps = cfg.train.epochs * len(train_loader)
     scheduler = hydra.utils.instantiate(

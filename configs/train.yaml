@@ -13,6 +13,9 @@ data:
   batch_size: 32
   num_workers: 4
   max_seq_len: 512
+  # Optional pre-rendered train split (PNGs on disk). When set, training reads
+  # from disk instead of rendering with verovio each epoch -> GPU-bound.
+  train_dir: null
 
 train:
   epochs: 30
