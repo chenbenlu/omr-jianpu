@@ -1,0 +1,41 @@
+defaults:
+  - model: vit
+  - optim: default
+  - logging: tensorboard
+  - _self_
+
+seed: 42
+run_name: ${model.encoder_name}-${now:%Y%m%d-%H%M%S}
+
+data:
+  out_dir: data/synthetic
+  train_size: 100000
+  batch_size: 32
+  num_workers: 4
+  max_seq_len: 512
+  # Optional pre-rendered train split (PNGs on disk). When set, training reads
+  # from disk instead of rendering with verovio each epoch -> GPU-bound.
+  train_dir: null
+
+train:
+  epochs: 30
+  grad_clip: 1.0
+  mixed_precision: bf16
+  eval_every_steps: 2000
+  save_every_steps: 2000
+  log_every_steps: 50
+  # Cap free-running generation at validation. Val gt sequences top out
+  # around 43 tokens, so 64 gives headroom while bounding any runaway so SER
+  # stays interpretable.
+  gen_max_length: 64
+
+checkpoint:
+  dir: checkpoints/${run_name}
+  keep_top_k: 3
+
+hydra:
+  run:
+    dir: outputs/${run_name}
+  sweep:
+    dir: outputs/multirun/${now:%Y%m%d-%H%M%S}
+    subdir: ${hydra.job.num}_${model.encoder_name}_seed${seed}

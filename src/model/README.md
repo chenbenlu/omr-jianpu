@@ -13,6 +13,63 @@ of `src.data.create_dataloaders`. The decoder is shared: a Transformer with
 **four output heads** (one per label stream) so we can measure pitch accuracy
 and rhythm accuracy independently when comparing encoders.
 
+## Encoder ablation: ViT works, ResNet has a structural pitch limitation
+
+Same four-head decoder, same losses, same data — only the encoder differs
+(full 100k-sample × 30-epoch runs, validated on the held-out synthetic set):
+
+| Encoder | val SER ↓ | pitch acc ↑ | rhythm acc ↑ |
+|---|---|---|---|
+| `vit` (pretrained, `[CLS]` dropped) | **0.0029** | **99.85%** | **99.78%** |
+| `resnet` (from-scratch CNN) | ~1.10 | **~0%** | ~30–40% |
+
+ViT learns the task almost perfectly. The from-scratch ResNet encoder reaches
+comparable *type* and partial *rhythm* accuracy but **never learns pitch** —
+its per-position pitch cross-entropy is pinned at ≈1.25 throughout training.
+That floor is exactly the loss of a head that predicts `<NULL>` correctly on
+non-note positions and is uninformative on notes (≈ `P(note) · ln |pitch
+vocab|`), i.e. zero pitch signal.
+
+**Diagnosis — a representation limitation, not a tuning one.** `ResNetEncoder`
+collapses the image *height* into a single token per image column
+(`feat.mean(dim=2)` → a 1-D sequence over width). But a convolutional stack is
+**translation-equivariant**: a notehead produces the same local features
+regardless of *where* it sits vertically, so the column features encode "a note
+is here" but not its **absolute vertical position** — and pitch *is* the
+vertical position of the notehead on the staff. Collapsing height therefore
+discards precisely the cue pitch depends on.
+
+The ≈1.25 floor proved invariant to every intervention tried: learning rate
+(5e-4 ↔ 1.4e-3), replacing the height mean-pool with a height *flatten*,
+increasing vertical resolution (H÷32 → H÷8), and even adding an explicit
+learned vertical positional embedding. The same decoder + loss reaches 99.85%
+pitch with the ViT encoder, so the bottleneck is the ResNet encoder's 1-D
+representation (and the from-scratch cross-attention alignment it forces), not
+the decoder, the loss, or the data.
+
+A principled fix would preserve 2-D structure — emit an `H_out × W_out` grid of
+CNN-feature tokens with 2-D positional embeddings (a CNN-feature analogue of
+ViT) rather than collapsing to columns. The current `ResNetEncoder` is retained
+deliberately as the empirical demonstration of this limitation; **`vit` is the
+working configuration.**
+
+## Training data path
+
+Train defaults to **on-the-fly** rendering (`SyntheticOMRDataset`): verovio
+re-renders every image each epoch, which is CPU-bound and leaves the GPU ~90%
+idle. For GPU-bound training, pre-render the split once and read PNGs from disk
+via the `data.train_dir` config key:
+
+```bash
+python -m scripts.prerender_train --out data/synthetic/train \
+    --n 100000 --seed 42 --workers 8        # ~8 min, sharded across workers
+python -m src.model.train data.train_dir=data/synthetic/train \
+    data.batch_size=256                     # GPU util ~99%, ~7× faster
+```
+
+Augmentation is still applied at load time, so the training distribution is
+unchanged; only the (deterministic, `(seed, idx)`-keyed) base render is cached.
+
 ## Batch contract
 
 ```python

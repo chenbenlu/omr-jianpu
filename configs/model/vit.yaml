@@ -1,0 +1,28 @@
+# ViT-base encoder; pretrained weights are the default. Override
+# `model.encoder.pretrained=false` for offline/CI determinism.
+encoder_name: vit
+
+encoder:
+  _target_: src.model.encoders.ViTEncoder
+  d_model: ${model.d_model}
+  pretrained: true
+
+d_model: 384
+decoder_layers: 4
+decoder_heads: 6
+decoder_ffn_dim: 1536
+dropout: 0.1
+max_decoder_positions: 512
+scale_embedding: true
+eos_weight: 1.0
+
+loss_weights:
+  type: 1.0
+  pitch: 1.0
+  rhythm: 1.0
+  attribute: 1.0
+
+mask_null_in_loss:
+  pitch: false
+  rhythm: false
+  attribute: false
