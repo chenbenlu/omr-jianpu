@@ -128,3 +128,9 @@ GEMINI.md
 *.vrb
 # Keep the rendered PDF.
 !docs/proposal/proposal.pdf
+
+# ---------- Hugging Face Space assembly tree ----------
+# spaces/ holds an independently-versioned mirror of src/deploy + assets that
+# we push to https://huggingface.co/spaces/chenbenlu/omr-to-jianpu. It has its
+# own .git/ and is not part of the main repo.
+spaces/

@@ -1,91 +1,112 @@
 # OMR-to-Jianpu
 
-End-to-end deep-learning Optical Music Recognition. A Vision-Encoder-Decoder translates printed monophonic staff-notation images into structured semantic tokens, which downstream are mapped to [Jianpu](https://en.wikipedia.org/wiki/Numbered_musical_notation) (numbered notation) — no MusicXML, no MIDI, no rule-based heuristics in the model path.
+End-to-end deep-learning Optical Music Recognition. A Vision-Encoder-Decoder
+translates printed monophonic staff-notation images into structured semantic
+tokens, which downstream are mapped to
+[Jianpu](https://en.wikipedia.org/wiki/Numbered_musical_notation) (numbered
+notation) — no MusicXML, no MIDI, no rule-based heuristics in the model path.
 
-The image source is **100% synthetic**: music21 builds a Stream → verovio renders it to PNG. Labels are emitted directly from the generator as four parallel decoupled streams (`type` / `pitch` / `rhythm` / `attribute`) so we can score pitch and rhythm accuracy independently when comparing Vision-Encoder-Decoder architectures.
+Images are **100% synthetic** (music21 builds a Stream → verovio renders it
+to PNG). Labels come from the generator as four parallel streams
+(`type` / `pitch` / `rhythm` / `attribute`) so pitch and rhythm accuracy can
+be scored independently across encoder variants.
 
-NYCU 535354 Deep Learning final project (Track 3 — Application). Team: BEN-LU CHEN, CHUN-JUI HSU, MENG-XI LIN, JIAN-AN ZHU. See [docs/proposal/proposal.pdf](docs/proposal/proposal.pdf) for the full proposal.
+NYCU 535354 Deep Learning final project (Track 3 — Application). Team:
+BEN-LU CHEN, CHUN-JUI HSU, MENG-XI LIN, JIAN-AN ZHU. Full proposal:
+[docs/proposal/proposal.pdf](docs/proposal/proposal.pdf).
+
+## Live demo
+
+🎼 **<https://huggingface.co/spaces/chenbenlu/omr-to-jianpu>** — upload a
+staff image (or pick one of 20 bundled validation samples) and watch the
+model predict Jianpu, render it as a CSS-grid pretty score, and engrave the
+prediction back to staff notation. Streamlit on Docker, free CPU tier,
+~10–30 s greedy decode per image. Weights:
+[`chenbenlu/omr-to-jianpu-vit`](https://huggingface.co/chenbenlu/omr-to-jianpu-vit).
+
+| Upload tab | Val-sample tab | Engraved view |
+|---|---|---|
+| ![upload](docs/screenshots/space-upload.png) | ![sample](docs/screenshots/space-sample.png) | ![engraved](docs/screenshots/space-engraved.png) |
+
+## Results
+
+Same 4-head decoder, same losses, same data — only the encoder front-end
+changes. Validation: 1 000 pre-rendered synthetic samples.
+
+| encoder | Symbol Error Rate ↓ | pitch acc | rhythm acc | notes |
+|---|---|---|---|---|
+| **ViT (base)** | **0.0029** | **99.85 %** | **99.78 %** | pretrained on ImageNet; shipped on the Space |
+| ResNet (scratch) | ~1.10 | ~0 % | ~30–40 % | structural ceiling — see [src/model/README.md](src/model/README.md) |
+
+The ResNet result is a documented structural limit, not a tuning failure: a
+translation-equivariant CNN that collapses image height into one token per
+column cannot encode *absolute vertical position*, which is exactly what
+pitch is. Rhythm (per-column) still learns; pitch is pinned at the NULL-only
+floor regardless of LR / pooling / vertical-resolution / vertical-pos-emb
+sweeps. The encoder ablation is the project's main empirical contribution.
+
+## Deployment flow
+
+```mermaid
+flowchart LR
+    A[music21<br/>+ verovio] -->|synthetic PNG +<br/>4 parallel labels| B[train.py<br/>ViT VED]
+    B -->|step-N-best/<br/>model.safetensors| C[HF model repo<br/>chenbenlu/omr-to-jianpu-vit]
+    C -.->|snapshot_download<br/>at Space cold start| D[HF Space<br/>Docker SDK · cpu-basic]
+    E[spaces/ tree<br/>app.py + src/ + Dockerfile] -->|git push| D
+    D -->|Streamlit UI| F[User<br/>uploads staff image]
+    F -->|prediction| G[Jianpu + engraved<br/>staff PNG]
+```
+
+See [spaces/README.md](spaces/README.md) for the Space repo's own docs, and
+[src/deploy/README.md](src/deploy/README.md) for the underlying inference
+API.
 
 ## Quick start
 
-You need WSL2 + Docker Desktop with the NVIDIA Container Toolkit, on a machine with a Blackwell GPU (RTX 5060 / 5070).
-
-**VS Code (recommended):** open the repo, then "Reopen in Container" — picks up [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json), builds the image, attaches as `omr`, and installs the pre-commit hooks for you.
-
-**CLI:**
-
-```bash
-make build       # ~10 min first time (pulls ~6 GB CUDA base + installs deps)
-make up          # start the dev container in the background
-make shell       # drop into a bash shell as the non-root `omr` user
-```
-
-Sanity checks:
+You need WSL2 + Docker Desktop with the NVIDIA Container Toolkit, on a
+machine with a Blackwell GPU (RTX 5060 / 5070). In VS Code, open the repo
+and "Reopen in Container" — picks up
+[.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) and
+installs the pre-commit hooks for you. From a CLI:
 
 ```bash
-make gpu         # nvidia-smi inside the container
+make build       # ~10 min first time
+make shell       # bash as the non-root `omr` user inside the container
 make gpu-test    # 2048×2048 GPU matmul — confirms sm_120 kernels are present
-make image-size  # should be ~30 GB; if much larger, see the chown trap note below
 ```
 
-When you're done:
-
-```bash
-make down        # stop and remove the container (your code on the host is untouched)
-```
-
-## Why these specific versions
-
-The Dockerfile pins `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel`. **Do not downgrade.** All three team GPUs are Blackwell (compute capability `sm_120`), and PyTorch wheels older than 2.7 ship kernels only up to `sm_90`. They run `nvidia-smi` fine and `torch.cuda.is_available()` returns `True`, then every actual GPU op crashes with:
-
-```
-RuntimeError: CUDA error: no kernel image is available for execution on the device
-```
-
-If `make build` ever produces a multi-tens-of-GB image, the most likely cause is a `chown -R` over `/opt/conda` — Docker's copy-on-write duplicates every chowned file into a new layer. The current Dockerfile installs deps at build time as root and never recursively chowns parent-layer dirs; keep it that way.
+The Dockerfile pins `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel` — **do not
+downgrade**. Blackwell GPUs are `sm_120`; PyTorch wheels < 2.7 ship kernels
+only up to `sm_90`, run `nvidia-smi` fine, then crash on every actual GPU op
+with `CUDA error: no kernel image is available for execution on the device`.
 
 ## Repository layout
 
 ```
-.
-├── Dockerfile, docker-compose.yml, Makefile     # dev environment
-├── .devcontainer/                                # VS Code Dev Containers config
-├── requirements.txt                              # Python deps (no torch — comes from base image)
-├── .dockerignore, .gitignore                     # keep build context small; keep repo clean
-├── .pre-commit-config.yaml                       # ruff + black + nbstripout + large-file guard
-├── .github/
-│   ├── workflows/ci.yml                          # ruff + black + pytest + branch-name check
-│   └── PULL_REQUEST_TEMPLATE.md
-├── src/
-│   ├── data/         # Member A — synthetic monophonic score generation (music21 + verovio) + multi-encoder DataLoaders
-│   ├── model/        # Member B — Vision-Encoder-Decoder (ViT/ResNet encoder + Transformer decoder), losses, training loop
-│   ├── postproc/     # Member C — decoupled (type/pitch/rhythm/attribute) tokens → Jianpu mapping
-│   └── deploy/       # Member D — pipeline glue + Streamlit UI
-├── configs/          # Hydra configs land here
-├── data/             # gitignored — pre-rendered val/test PNGs land under data/synthetic/{val,test}/ at runtime
-├── notebooks/        # exploratory work; not on the import path
-├── tests/
-└── docs/
-    ├── GIT_WORKFLOW.md      # branching, PR policy, conflict resolution
-    └── proposal/            # LaTeX source + rendered PDF for the NeurIPS-style proposal
+src/
+  data/      Member A — synthetic generator + DataLoaders (music21 + verovio)
+  model/     Member B — Vision-Encoder-Decoder + training loop
+  postproc/  Member C — decoupled tokens → Jianpu mapping
+  deploy/    Member D — inference API + Streamlit UI
+spaces/      Hugging Face Space assembly tree (gitignored; own .git/)
+configs/     Hydra configs
+docs/        Proposal, Git workflow, screenshots
+tests/       pytest (CPU-only)
 ```
 
-## Collaboration
+Per-module READMEs: [data](src/data/README.md) · [model](src/model/README.md)
+· [postproc](src/postproc/README.md) · [deploy](src/deploy/README.md). Branch
+naming, PR policy, and conflict resolution:
+[docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md).
 
-We use a lightweight GitHub Flow split by module owner. The full policy lives in [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md); the short version:
+## Citation
 
-- Branch names: `<type>/<owner-letter>-<kebab-slug>` — e.g. `feature/B-train-vit-decoder-baseline`, `fix/A-augment-rotation-clipping`, `exp/B-cosine-lr-warmup-trial`.
-- `main` is protected. PRs need ≥ 1 approving review (every affected module owner if the change crosses module lines). Squash-merge into `main`. Rebase your branch onto `main`; never merge `main` back.
-- Experiments live on `exp/*` branches and **must not** be merged to `main`. Re-author the winning idea as a `feature/*` PR.
-
-Before your first commit:
-
-```bash
-make shell
-pre-commit install   # one-time, inside the container
+```bibtex
+@misc{omr2jianpu2026,
+  author       = {Chen, Ben-Lu and Hsu, Chun-Jui and Lin, Meng-Xi and Zhu, Jian-An},
+  title        = {OMR-to-Jianpu: End-to-end Vision-Encoder-Decoder for printed monophonic staff notation},
+  year         = {2026},
+  howpublished = {\url{https://github.com/chenbenlu/omr-jianpu}},
+  note         = {NYCU 535354 Deep Learning final project (Track 3 — Application). Live demo: \url{https://huggingface.co/spaces/chenbenlu/omr-to-jianpu}}
+}
 ```
-
-## Documentation index
-
-- [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) — full Git workflow policy
-- [docs/proposal/proposal.pdf](docs/proposal/proposal.pdf) — project proposal
