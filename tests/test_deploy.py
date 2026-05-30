@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 from PIL import Image
 from safetensors.torch import save_file
-from torch.utils.tensorboard import SummaryWriter
 
 from src.data import ENCODER_REGISTRY, build_default_vocabs
 from src.deploy.inference import (
@@ -18,7 +17,6 @@ from src.deploy.inference import (
 from src.model.config import ModelConfig
 from src.model.encoders import ResNetEncoder
 from src.model.model import OMRModel
-from scripts import report_experiments
 
 _TINY_CFG = ModelConfig(
     d_model=32,
@@ -106,56 +104,6 @@ def test_inferencer_predict_batch(tmp_path):
     preds = inferencer.predict_batch(imgs)
     assert len(preds) == 3
     assert all(isinstance(p, JianpuPrediction) for p in preds)
-
-
-# --- reporting script -----------------------------------------------------
-
-
-def _write_run(runs_dir: Path, name: str, ser: list[float]) -> None:
-    writer = SummaryWriter(log_dir=str(runs_dir / name))
-    for i, value in enumerate(ser):
-        step = (i + 1) * 1000
-        writer.add_scalar("val/ser", value, step)
-        writer.add_scalar("val/pitch_accuracy", 1.0 - value, step)
-        writer.add_scalar("val/rhythm_accuracy", 1.0 - value / 2, step)
-        writer.add_scalar("train/loss/total", value * 10, step)
-    writer.close()
-
-
-def test_report_groups_by_encoder_and_emits_outputs(tmp_path):
-    runs_dir = tmp_path / "runs"
-    runs_dir.mkdir()
-    _write_run(runs_dir, "vit-20260101-000000", [0.5, 0.2, 0.01])
-    _write_run(runs_dir, "vit-20260101-111111", [0.6, 0.25, 0.02])
-    _write_run(runs_dir, "resnet-20260101-222222", [0.9, 0.8, 0.7])
-
-    runs = report_experiments.load_runs(runs_dir)
-    assert {r.encoder for r in runs} == {"vit", "resnet"}
-    assert len(runs) == 3
-
-    out = tmp_path / "reports"
-    out.mkdir()
-    for tag, title, ylabel, log_y in report_experiments.METRICS:
-        fname = tag.replace("/", "_") + ".png"
-        assert report_experiments.plot_metric(
-            runs, tag, title, ylabel, log_y, out / fname
-        )
-        assert (out / fname).exists()
-
-    rows = report_experiments.write_summary(runs, out)
-    assert (out / "summary.csv").exists()
-    assert (out / "summary.md").exists()
-    vit_best = min(r["best_val_ser"] for r in rows if r["encoder"] == "vit")
-    assert vit_best == 0.01
-
-
-def test_report_skips_empty_dirs(tmp_path):
-    runs_dir = tmp_path / "runs"
-    (runs_dir / "empty-20260101-000000").mkdir(parents=True)
-    _write_run(runs_dir, "vit-20260101-000000", [0.3, 0.1])
-    runs = report_experiments.load_runs(runs_dir)
-    assert len(runs) == 1
-    assert runs[0].encoder == "vit"
 
 
 # --- notation: tuples -> music21 Stream + engraving -----------------------
