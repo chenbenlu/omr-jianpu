@@ -107,6 +107,11 @@ naming, PR policy, and conflict resolution:
   title        = {OMR-to-Jianpu: End-to-end Vision-Encoder-Decoder for printed monophonic staff notation},
   year         = {2026},
   howpublished = {\url{https://github.com/chenbenlu/omr-jianpu}},
+  license      = {Apache-2.0},
   note         = {NYCU 535354 Deep Learning final project (Track 3 — Application). Live demo: \url{https://huggingface.co/spaces/chenbenlu/omr-to-jianpu}}
 }
 ```
+
+## License
+
+[Apache License 2.0](LICENSE) © 2026 Ben-Lu Chen.
