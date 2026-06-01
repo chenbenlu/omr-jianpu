@@ -91,8 +91,14 @@ class ResNetEncoder(nn.Module):
         raw = (pixel_values != 1.0).any(dim=1, keepdim=True).float()
         for stride in self._STRIDES:
             raw = F.avg_pool2d(raw, kernel_size=3, stride=stride, padding=1)
-        col_mask = (raw.mean(dim=2) > 0.5).squeeze(1)
-        return col_mask.to(torch.long)
+        # ==========================================
+        # ==== 修改程式碼：修改閾值與維度
+        # ==========================================
+        # raw 的形狀為 (B, 1, H_feat, W_feat)
+        # 將閾值從 > 0.5 改為 > 1e-5 (只要有任何音符或譜線痕跡都算有效內容)
+        # 將維度從 4D 確實降維成 2D 的 (B, W_feat) 矩陣，以符合 ctc_losses 的 input_lengths 預期
+        col_mask = (raw.sum(dim=2) > 1e-5).to(torch.long)  # (B, 1, W_feat)
+        return col_mask.squeeze(1)  # 確保輸出為 (B, W_feat)
 
     def forward(self, pixel_values: torch.Tensor) -> EncoderOutput:
         feat = pixel_values

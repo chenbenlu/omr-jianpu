@@ -156,7 +156,7 @@ def main() -> None:
                 ckpt_dir = str(CKPT_ROOT / ckpt_name)
             else:
                 ckpt_dir = st.text_input("Checkpoint dir", value=str(CKPT_ROOT))
-            encoder = st.selectbox("Encoder", ["auto", "vit", "resnet"])
+            encoder = st.selectbox("Encoder", ["auto", "vit", "resnet", "crnn"])
             max_length = st.slider("Max decode length", 16, 256, 64, step=16)
         st.header("Output")
         view = st.radio(

@@ -191,3 +191,70 @@ def load_bundle(directory: Path) -> VocabBundle:
         rhythm=Vocabulary.load(directory / "rhythm.json"),
         attribute=Vocabulary.load(directory / "attribute.json"),
     )
+
+
+# ==========================================
+# ==== 新增程式碼：CTC 一體化聯合詞表建立工具
+# ==========================================
+def build_joint_ctc_vocab(bundle: VocabBundle) -> tuple[dict, dict]:
+    """根據 MelodyGenerator 的結構規則，建立精確收斂的一體化 CTC 詞表。
+    避免暴力笛卡爾積組合，將詞表總數控制在 ~2150 類左右，完美契合模型。
+    """
+    joint_token_to_id = {}
+    id_to_joint_token = {}
+
+    # 1. 註冊 CTC 核心控制特殊符
+    id_to_joint_token[0] = ("<BLANK>", None, None, None)
+    id_to_joint_token[3] = ("<UNK>", None, None, None)
+    joint_token_to_id[("<BLANK>", None, None, None)] = 0
+    joint_token_to_id[("<UNK>", None, None, None)] = 3
+
+    current_id = 5  # 從 5 開始動態分配，避開 PAD(0), BOS(1), EOS(2), UNK(3), NULL(4)
+
+    # 2. 規則 A：結構屬性類 (clef, key_signature, time_signature)
+    # 這些類別僅與自己的 attribute 組合，其餘為 None
+    for c_tok in bundle.attribute.id_to_token.values():
+        if c_tok in bundle.attribute.SPECIAL_TOKENS_WITH_NULL:
+            continue
+
+        # 自動路由分類
+        if c_tok.startswith("G") or c_tok.startswith("F") or c_tok.startswith("C"):
+            t_tok = "clef"
+        elif c_tok.startswith("ks"):
+            t_tok = "key_signature"
+        else:
+            t_tok = "time_signature"
+
+        key = (t_tok, None, None, c_tok)
+        joint_token_to_id[key] = current_id
+        id_to_joint_token[current_id] = key
+        current_id += 1
+
+    # 3. 規則 B：小節線類 (barline) -> 全為 None
+    barline_key = ("barline", None, None, None)
+    joint_token_to_id[barline_key] = current_id
+    id_to_joint_token[current_id] = barline_key
+    current_id += 1
+
+    # 4. 規則 C：休止符類 (rest) -> 僅與 rhythm 組合
+    for r_tok in bundle.rhythm.id_to_token.values():
+        if r_tok in bundle.rhythm.SPECIAL_TOKENS_WITH_NULL:
+            continue
+        key = ("rest", None, r_tok, None)
+        joint_token_to_id[key] = current_id
+        id_to_joint_token[current_id] = key
+        current_id += 1
+
+    # 5. 規則 D：音符類 (note) -> 音高 (pitch) 與 節奏 (rhythm) 的合法合法配對
+    for p_tok in bundle.pitch.id_to_token.values():
+        if p_tok in bundle.pitch.SPECIAL_TOKENS_WITH_NULL:
+            continue
+        for r_tok in bundle.rhythm.id_to_token.values():
+            if r_tok in bundle.rhythm.SPECIAL_TOKENS_WITH_NULL:
+                continue
+            key = ("note", p_tok, r_tok, None)
+            joint_token_to_id[key] = current_id
+            id_to_joint_token[current_id] = key
+            current_id += 1
+
+    return joint_token_to_id, id_to_joint_token

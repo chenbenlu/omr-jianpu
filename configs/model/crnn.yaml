@@ -1,0 +1,40 @@
+# CRNN (ResNet + Bi-LSTM) architecture optimized for CTC Loss sequence alignment.
+is_crnn: true
+encoder_name: resnet
+# 因為我們的 CRNN 實際上是直接複用 ResNetEncoder 作為視覺特徵提取器
+# 資料管線（如影像解析度、單通道灰階、動態寬度 Padding）必須完全遵循 ResNet 的資料契約
+encoder:
+  _target_: src.model.encoders.ResNetEncoder
+  d_model: ${model.d_model}
+
+# CRNN / Bi-LSTM Decoder exclusive hyperparameters
+hidden_dim: 256       # Hidden dimension size for Bidirectional LSTM layers
+num_layers: 2         # Number of stacked Bi-LSTM layers
+ctc_vocab_size: 2500  # Size of the packed joint CTC vocabulary (including <BLANK>)
+
+d_model: 384
+dropout: 0.1
+
+# =========================================================================
+# Defensive Compatibility Fields
+# The following fields are strictly required by `_build_model_config`
+# inside `src/model/train.py` to prevent Hydra dictionary parsing crashes.
+# They do not affect the execution of CRNN forward or CTC loss calculation.
+# =========================================================================
+decoder_layers: 4
+decoder_heads: 6
+decoder_ffn_dim: 1536
+max_decoder_positions: 512
+scale_embedding: true
+eos_weight: 1.0
+
+loss_weights:
+  type: 1.0
+  pitch: 1.0
+  rhythm: 1.0
+  attribute: 1.0
+
+mask_null_in_loss:
+  pitch: false
+  rhythm: false
+  attribute: false

@@ -38,10 +38,38 @@ def main(cfg: DictConfig) -> None:
     torch.manual_seed(cfg.seed)
 
     vb = build_default_vocabs()
+    # ==========================================
+    # ==== 修改後程式碼：宣告並將變數綁定至全域範疇
+    # ==========================================
+    # --- 新增：定義並初始化 CTC 聯合詞表全域變數 ---
+    joint_token_to_id = None
+    id_to_joint_token = None
+    if cfg.model.get("is_crnn", False):
+        from src.data.vocabulary import build_joint_ctc_vocab
+
+        joint_token_to_id, id_to_joint_token = build_joint_ctc_vocab(vb)
+        # 動態將詞表真實大小覆寫回 Hydra 配置中，確保與外部定義完美同步
+        cfg.model.ctc_vocab_size = len(id_to_joint_token)
+
     spec = get_encoder_spec(cfg.model.encoder_name)
     encoder = hydra.utils.instantiate(cfg.model.encoder, encoder_spec=spec)
     model_cfg = _build_model_config(cfg)
-    model = OMRModel(encoder=encoder, vocabs=vb, cfg=model_cfg)
+
+    # ==========================================
+    # ==== 修改後程式碼：依組態實例化 OMRCRNNModel
+    # ==========================================
+    # --- 新增：動態切換 CRNN 模型與一體化詞表初始化 ---
+    if cfg.model.get("is_crnn", False):
+        from src.model.crnn import OMRCRNNModel
+
+        model = OMRCRNNModel(
+            encoder=encoder,
+            ctc_vocab_size=cfg.model.ctc_vocab_size,
+            d_model=cfg.model.d_model,
+        )
+        # 此處需為訓練流程配上全域載入的 joint_token_to_id 字典
+    else:
+        model = OMRModel(encoder=encoder, vocabs=vb, cfg=model_cfg)
 
     loaders = create_dataloaders(
         out_dir=cfg.data.out_dir,
@@ -105,21 +133,55 @@ def main(cfg: DictConfig) -> None:
             disable=not accelerator.is_local_main_process,
         ):
             with accelerator.autocast():
-                out = model(
-                    pixel_values=batch["pixel_values"],
-                    type_ids=batch["type_ids"],
-                    pitch_ids=batch["pitch_ids"],
-                    rhythm_ids=batch["rhythm_ids"],
-                    attribute_ids=batch["attribute_ids"],
-                    decoder_attention_mask=batch["decoder_attention_mask"],
-                )
-                labels = {
-                    "type": batch["type_ids"],
-                    "pitch": batch["pitch_ids"],
-                    "rhythm": batch["rhythm_ids"],
-                    "attribute": batch["attribute_ids"],
-                }
-                total, per_head = compute_loss(out["logits"], labels, model_cfg)
+                # ==========================================
+                # ==== 修改後程式碼：加入 CTC 損失函數與流打包計算
+                # ==========================================
+                # --- 新增：CRNN CTC 損失流計算 ---
+                if cfg.model.get("is_crnn", False):
+                    from src.model.ctc_losses import (
+                        compute_ctc_loss,
+                        pack_streams_to_ctc_targets,
+                    )
+
+                    # 1. 前向傳播計算序列 Logits
+                    out = model(pixel_values=batch["pixel_values"])
+
+                    # 2. 將四大獨立標籤流打包為一體化 CTC Targets
+                    ctc_targets, target_lengths = pack_streams_to_ctc_targets(
+                        batch, vb, joint_token_to_id
+                    )
+
+                    # 3. 計算 CTC 損失
+                    total = compute_ctc_loss(
+                        logits=out["logits"],
+                        ctc_targets=ctc_targets,
+                        attention_mask=out["attention_mask"],
+                        target_lengths=target_lengths,
+                        blank_id=0,
+                    )
+                    # 構造虛擬字典以便 TensorBoard 日誌模組能直接複用
+                    per_head = {
+                        "type": total,
+                        "pitch": total,
+                        "rhythm": total,
+                        "attribute": total,
+                    }
+                else:
+                    out = model(
+                        pixel_values=batch["pixel_values"],
+                        type_ids=batch["type_ids"],
+                        pitch_ids=batch["pitch_ids"],
+                        rhythm_ids=batch["rhythm_ids"],
+                        attribute_ids=batch["attribute_ids"],
+                        decoder_attention_mask=batch["decoder_attention_mask"],
+                    )
+                    labels = {
+                        "type": batch["type_ids"],
+                        "pitch": batch["pitch_ids"],
+                        "rhythm": batch["rhythm_ids"],
+                        "attribute": batch["attribute_ids"],
+                    }
+                    total, per_head = compute_loss(out["logits"], labels, model_cfg)
 
             accelerator.backward(total)
             accelerator.clip_grad_norm_(model.parameters(), cfg.train.grad_clip)
@@ -150,12 +212,27 @@ def main(cfg: DictConfig) -> None:
                 step % cfg.train.eval_every_steps == 0
                 and accelerator.is_local_main_process
             ):
-                metrics = run_validation(
-                    accelerator.unwrap_model(model),
-                    val_loader,
-                    vb,
-                    max_length=cfg.train.gen_max_length,
-                )
+                # ==========================================
+                # ==== 修改後程式碼：路由切換至 CTC 的特殊驗證函數
+                # ==========================================
+                if cfg.model.get("is_crnn", False):
+                    # 呼叫為 CRNN 量身訂製的 Validation 腳本
+                    # (內部將 model.predict_greedy 產生的結果透過 ctc_greedy_decode_batch 轉回 tuples)
+                    from src.model.evaluation import run_ctc_validation
+
+                    metrics = run_ctc_validation(
+                        accelerator.unwrap_model(model),
+                        val_loader,
+                        vb,
+                        id_to_joint_token,
+                    )
+                else:
+                    metrics = run_validation(
+                        accelerator.unwrap_model(model),
+                        val_loader,
+                        vb,
+                        max_length=cfg.train.gen_max_length,
+                    )
                 logger.log_scalars(
                     {
                         "val/ser": metrics.ser,
@@ -166,7 +243,27 @@ def main(cfg: DictConfig) -> None:
                 )
                 if metrics.ser < best_ser:
                     best_ser = metrics.ser
-                    accelerator.save_state(str(ckpt_root / f"step-{step}-best"))
+                    # ==========================================
+                    # ==== 修改後程式碼：自動將詞表與模型权重複製綁定
+                    # ==========================================
+                    save_path = ckpt_root / f"step-{step}-best"
+                    accelerator.save_state(str(save_path))
+                    # --- 新增：如果是 CRNN 模式，將解碼用 JSON 一併存入該 Step 目錄 ---
+                    if (
+                        cfg.model.get("is_crnn", False)
+                        and id_to_joint_token is not None
+                    ):
+                        import json
+
+                        vocab_file = save_path / "ctc_vocab.json"
+                        with vocab_file.open("w", encoding="utf-8") as f:
+                            # 由於 JSON 的 key 必須是字串，轉換 Tuple 為 List 儲存
+                            payload = {
+                                "id_to_joint_token": {
+                                    k: list(v) for k, v in id_to_joint_token.items()
+                                }
+                            }
+                            json.dump(payload, f, ensure_ascii=False, indent=2)
                 model.train()
 
     if accelerator.is_local_main_process:

@@ -63,6 +63,12 @@ def collate_fn(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         "label_lengths": label_lengths,
     }
     out.update(stacked)
+
+    # ==========================================
+    # ==== 新增程式碼：紀錄當前 Batch 內影像壓扁後的 W 軸時間軸長度
+    # ==========================================
+    # 方便訓練管線與 nn.CTCLoss 的長度邊界校驗對齊
+    out["input_max_length"] = torch.tensor(pixel_values.shape[-1], dtype=torch.long)
     return out
 
 
