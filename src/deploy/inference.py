@@ -107,7 +107,9 @@ class OMRInferencer:
         self.max_length = max_length
 
         self.vocabs = build_default_vocabs()
-        self.spec = get_encoder_spec(self.encoder_name)
+        # 因為 CRNN 的視覺主幹是 ResNet，如果模型架構是 crnn，影像規格請自動對齊 resnet
+        spec_name = "resnet" if self.encoder_name == "crnn" else self.encoder_name
+        self.spec = get_encoder_spec(spec_name)
         self.transform = self.spec.build_eval_transform()
         cfg = model_config or DEFAULT_MODEL_CONFIG
 
