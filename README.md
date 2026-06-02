@@ -103,7 +103,7 @@ naming, PR policy, and conflict resolution:
 
 ```bibtex
 @misc{omr2jianpu2026,
-  author       = {Chen, Ben-Lu and Hsu, Chun-Jui and Lin, Meng-Xi and Zhu, Jian-An},
+  author       = {Chen, Ben-Lu and Hsu, Chun-Jui and Lin, Meng-Xi and Chou, Chien-An},
   title        = {OMR-to-Jianpu: End-to-end Vision-Encoder-Decoder for printed monophonic staff notation},
   year         = {2026},
   howpublished = {\url{https://github.com/chenbenlu/omr-jianpu}},
