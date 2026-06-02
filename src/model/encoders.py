@@ -65,6 +65,17 @@ class ResNetEncoder(nn.Module):
         in_channels = 1 if encoder_spec is None else encoder_spec.channels
         blocks: list[nn.Module] = []
         c_in = in_channels
+
+        # === feature/B-crnn-and-ctr 修改：動態計算經過 CNN 卷積層後最終保留的特徵圖高度 H ===
+        h_out = (
+            encoder_spec.target_height
+            if (encoder_spec and encoder_spec.target_height)
+            else 128
+        )
+        for stride in self._STRIDES:
+            # 根據 kernel_size=3, padding=1, stride=s 計算特徵圖尺寸變化
+            h_out = (h_out + 2 * 1 - 3) // stride[0] + 1
+
         for c_out, stride in zip(self._CHANNELS, self._STRIDES):
             blocks.append(
                 nn.Sequential(
@@ -82,7 +93,9 @@ class ResNetEncoder(nn.Module):
             )
             c_in = c_out
         self.blocks = nn.ModuleList(blocks)
-        self.proj = nn.Linear(self._CHANNELS[-1], d_model)
+        # === feature/B-crnn-and-ctr 修改：將 Linear 層的輸入特徵維度改為 最終通道數 * 最終高度 ===
+        # 原本是：self.proj = nn.Linear(self._CHANNELS[-1], d_model)
+        self.proj = nn.Linear(self._CHANNELS[-1] * h_out, d_model)
 
     def _pad_mask(self, pixel_values: torch.Tensor) -> torch.Tensor:
         # A column is "padding-or-empty" iff every channel-pixel equals +1.0
@@ -98,8 +111,16 @@ class ResNetEncoder(nn.Module):
         feat = pixel_values
         for block in self.blocks:
             feat = block(feat)
-        # Collapse vertical axis, treat width as the time dimension.
-        seq = feat.mean(dim=2).transpose(1, 2).contiguous()
+        # === feature/B-crnn-and-ctr 修改：重寫壓扁與維度轉換邏輯（Pitch Fix） ===
+        # 原本的程式碼會直接將高度壓扁：feat.mean(dim=2) -> 所以才會遺失所有垂直高度（音高）特徵
+        # 改裝後：feat 形狀為 (B, C, H, W)
+        B, C, H, W = feat.shape
+
+        # 1. 調整維度順序，將寬度 W 移到時間序列軸 (B, W, C, H)
+        seq = feat.permute(0, 3, 1, 2)
+        # 2. 將同一個時間點（同一個 W）的通道特徵與高度空間特徵展平合併為 (B, W, C * H)
+        seq = seq.reshape(B, W, C * H)
+        # 3. 映射回標準的 d_model 維度，輸出為 (B, W, d_model)
         seq = self.proj(seq)
         mask = self._pad_mask(pixel_values)
         return EncoderOutput(hidden_states=seq, attention_mask=mask)
