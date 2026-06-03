@@ -181,7 +181,20 @@ def main(cfg: DictConfig) -> None:
                 )
                 if metrics.ser < best_ser:
                     best_ser = metrics.ser
-                    accelerator.save_state(str(ckpt_root / f"step-{step}-best"))
+                    # safe_serialization=False uses torch.save (pickle) instead
+                    # of safetensors. safetensors refuses to save aliasing
+                    # tensors, and PyTorch's nn.LSTM `_flat_weights` are views
+                    # into a single buffer — under safetensors only ONE of the
+                    # ~16 LSTM tensors gets stored, silently breaking the CRNN
+                    # checkpoint at load time (training-time val stays correct
+                    # because the model in memory is fine). torch.save preserves
+                    # the storage-sharing layout, so all LSTM weights round-trip
+                    # correctly. Marginal disk-format change, no impact on the
+                    # AR encoders.
+                    accelerator.save_state(
+                        str(ckpt_root / f"step-{step}-best"),
+                        safe_serialization=False,
+                    )
                 model.train()
 
     if accelerator.is_local_main_process:

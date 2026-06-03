@@ -177,11 +177,12 @@ def main() -> None:
     except Exception as exc:  # surface load errors in-page instead of a stack trace
         st.error(f"Failed to load checkpoint: {exc}")
         return
-    st.sidebar.success(f"Loaded `{inferencer.encoder_name}` on `{inferencer.device}`")
-    if inferencer.encoder_name == "resnet":
+    st.sidebar.success(f"Loaded `{inferencer.architecture}` on `{inferencer.device}`")
+    if inferencer.encoder_name == "resnet" and not inferencer.use_ctc:
         st.sidebar.info(
-            "ResNet encoder cannot learn pitch (documented structural "
-            "limitation); expect correct rhythm but wrong pitch numbers."
+            "ResNet + AR multi-head cannot learn pitch (documented structural "
+            "limitation); expect correct rhythm but wrong pitch numbers. The "
+            "CRNN+CTC pairing fixes this — train with `model=crnn`."
         )
 
     upload_tab, sample_tab = st.tabs(["Upload image", "Val sample"])

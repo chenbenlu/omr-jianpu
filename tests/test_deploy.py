@@ -64,6 +64,80 @@ def test_resolve_checkpoint_missing_raises(tmp_path):
         _resolve_checkpoint(tmp_path)
 
 
+def test_hydra_autodetect_use_ctc(tmp_path):
+    # Simulate a CRNN training tree: checkpoints/<run>/step-N-best/model.safetensors
+    # alongside outputs/<run>/.hydra/config.yaml.
+    from src.deploy.inference import _find_hydra_config, _model_config_from_hydra
+    import yaml as _yaml
+
+    run = "resnet-20260603-060007"
+    ckpt = tmp_path / "checkpoints" / run / "step-7800-best"
+    ckpt.mkdir(parents=True)
+    hydra_dir = tmp_path / "outputs" / run / ".hydra"
+    hydra_dir.mkdir(parents=True)
+    (hydra_dir / "config.yaml").write_text(
+        _yaml.safe_dump(
+            {
+                "model": {
+                    "encoder_name": "resnet",
+                    "d_model": 384,
+                    "use_ctc": True,
+                    "rnn_hidden_dim": 256,
+                    "rnn_bidirectional": True,
+                    "decoder_layers": 2,
+                }
+            }
+        )
+    )
+    found = _find_hydra_config(ckpt)
+    assert found is not None and found.name == "config.yaml"
+    cfg, enc = _model_config_from_hydra(_yaml.safe_load(found.read_text()))
+    assert enc == "resnet"
+    assert cfg.use_ctc is True
+    assert cfg.rnn_hidden_dim == 256
+    assert cfg.decoder_layers == 2
+
+
+def test_inferencer_detects_truncated_lstm(tmp_path):
+    # Reproduce the safetensors+nn.LSTM aliasing bug: save a CRNN model_config
+    # but write only `weight_ih_l0` (mimicking what safetensors does to a real
+    # CRNN state_dict). The inferencer must raise with a clear, actionable
+    # message — not silently load random LSTM weights and produce garbage.
+    from src.model.config import ModelConfig as _MC
+    from src.data import ENCODER_REGISTRY, build_default_vocabs
+    from src.model.encoders import ResNetEncoder
+    from src.model.model import OMRModel
+
+    tiny_ctc = _MC(
+        d_model=32,
+        decoder_layers=1,
+        decoder_heads=2,
+        decoder_ffn_dim=64,
+        max_decoder_positions=64,
+        dropout=0.0,
+        use_ctc=True,
+        rnn_hidden_dim=16,
+        rnn_bidirectional=True,
+    )
+    vb = build_default_vocabs()
+    encoder = ResNetEncoder(
+        d_model=tiny_ctc.d_model, encoder_spec=ENCODER_REGISTRY["resnet"]
+    )
+    model = OMRModel(encoder=encoder, vocabs=vb, cfg=tiny_ctc)
+
+    ckpt = tmp_path / "resnet-20260101-000000"
+    ckpt.mkdir()
+    # Keep everything except the LSTM (simulate safetensors aliasing loss);
+    # keep one rnn weight to mirror the real bug pattern.
+    full = model.state_dict()
+    truncated = {k: v for k, v in full.items() if not k.startswith("decoder.rnn.")}
+    truncated["decoder.rnn.weight_ih_l0"] = full["decoder.rnn.weight_ih_l0"]
+    save_file(truncated, str(ckpt / "model.safetensors"))
+
+    with pytest.raises(RuntimeError, match="safetensors"):
+        OMRInferencer(ckpt, device="cpu", model_config=tiny_ctc)
+
+
 # --- end-to-end inferencer (tiny random model, contract only) -------------
 
 

@@ -42,25 +42,46 @@ lilypond_available()
 from src.deploy import OMRInferencer
 inf = OMRInferencer(
     "checkpoints/vit-20260528-090804",  # may be a run dir OR a step-N-best dir
-    encoder=None,        # default: parse leading "vit"/"resnet" from the dir name
+    encoder=None,        # default: from Hydra dump if present, else parse dir name
     device=None,         # default: cuda if available else cpu
-    model_config=None,   # must match training; default = configs/model/vit.yaml shape
+    model_config=None,   # default: from Hydra dump if present, else AR baseline
     max_length=64,
 )
+print(inf.architecture)           # "ViT + AR multi-head" / "ResNet + CRNN+CTC"
 pred = inf.predict(image)         # image: PIL.Image | np.ndarray | path
 ```
 
 Key behaviours that demo robustness depends on:
 
-- **Encoder inference from dir name**: nothing is persisted inside the
-  checkpoint, so the leading token of the run-dir name is authoritative. Pass
-  `encoder=` explicitly to override.
-- **Best snapshot auto-pick**: if `ckpt_dir` has no `model.safetensors` itself
-  it picks the `step-N-best/` subdir with the highest `N`.
+- **Hydra-aware autodetect** (architecture comes from the training-time dump):
+  the inferencer looks for `outputs/<run_name>/.hydra/config.yaml` next to the
+  checkpoint and uses its `model.{use_ctc, rnn_hidden_dim, decoder_layers, ...}`
+  as the authoritative `ModelConfig`. This is how CRNN+CTC runs are detected,
+  since they live under `resnet-<timestamp>/` dirs (the `run_name` template is
+  `${encoder_name}-${timestamp}` and CRNN uses `encoder_name: resnet`).
+- **Encoder/architecture fallback**: when no Hydra dump is found, parse the
+  leading token of the run-dir name (`vit-` / `resnet-`) for the encoder, and
+  fall back to the AR baseline ModelConfig. Pass `encoder=` / `model_config=`
+  explicitly to override.
+- **CTC decode is type-anchored**: the model's own `generate()` collapses each
+  CTC head independently which breaks per-row alignment between the four
+  streams. `predict_batch` for CTC checkpoints calls `model.forward()` and runs
+  a type-anchored collapse — at each encoder time step, emit a row only when
+  the type head transitions to a non-blank non-duplicate token, pulling
+  pitch/rhythm/attribute from the same time step (blank in non-type heads maps
+  to `NULL_ID`).
+- **Best snapshot auto-pick**: if `ckpt_dir` has no weights file itself it
+  picks the `step-N-best/` subdir with the highest `N`. Either
+  `model.safetensors` (AR runs) or `pytorch_model.bin` (CRNN+CTC runs — see
+  the LSTM gotcha below) is accepted.
 - **`predict` is total**: a wild prediction with an out-of-range key signature
   makes `ids_to_jianpu` raise; the inferencer catches it and falls back to an
   empty `pred.jianpu` rather than crashing the UI. `pred.tuples` is always
   valid (it goes through `ids_to_tuples(..., strict=False)`).
+- **Truncated-LSTM detection**: if a CRNN+CTC checkpoint is loaded and the
+  state-dict is missing LSTM tensors (the safetensors aliasing bug, see
+  CLAUDE.md), the inferencer raises a `RuntimeError` with the exact remedy
+  instead of silently producing garbage.
 
 ## Jianpu rendering layer (`jianpu_format.py`)
 
