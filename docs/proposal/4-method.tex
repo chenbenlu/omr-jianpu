@@ -1,15 +1,45 @@
-\section{Methodology (Optional)}
+\section{Methodology}
 \label{section:algorithm}
 % Please use one paragraph to explain your high-level idea of the solution.
 Our proposed solution employs a Vision-Encoder-Decoder architecture to achieve an end-to-end translation from printed sheet music images to numbered musical notation (Jianpu) token sequences. Specifically, the model ingests a 2D image of a musical score and processes it through a visual encoder (such as a Vision Transformer or a deep Convolutional Neural Network like ResNet) to extract rich, dense spatial feature representations. These extracted visual features are subsequently passed to a Transformer-based decoder, which leverages cross-attention mechanisms to autoregressively predict a 1D sequence of custom Jianpu semantic tokens. By adopting this unified framework, the network implicitly learns both the intricate spatial relationships of standard Western musical symbols (e.g., pitches, rhythms, and chords) and the underlying music theory required for translation, entirely bypassing the need for intermediate formats or explicit, hard-coded heuristic rules.
 
-% If possible, draw an illustrative diagram to describe your high-level idea. 
-% Use the following figure block to insert architecture diagram (e.g., architecture.png or .pdf).
+\paragraph{Architecture details.}
+Concretely, the encoder is either a pretrained Vision Transformer \citep{dosovitskiy2021vit} (with the \texttt{[CLS]} token dropped) or a from-scratch ResNet-style CNN, producing a sequence of visual feature tokens. The decoder is a BART-style \citep{lewis2020bart} Transformer ($d_{\text{model}}=384$, $4$ layers, $6$ attention heads, feed-forward dimension $1536$) that cross-attends to these features. Crucially, rather than a single output vocabulary, the decoder carries \textbf{four decoupled output heads} --- \textit{type}, \textit{pitch}, \textit{rhythm}, and \textit{attribute} --- so that pitch and rhythm are predicted (and evaluated) independently. The four corresponding input embeddings are summed, with the structural special tokens (\texttt{PAD}/\texttt{BOS}/\texttt{EOS}) shared across vocabularies so they remain consistent at structural positions. At inference, decoding is greedy with a KV-cache. The training objective is the sum of per-head cross-entropy losses over the four streams.
+
+% Use the following figure block to insert architecture diagram.
 \begin{figure}[htbp]
     \centering
-    % \includegraphics[width=0.8\textwidth]{your_diagram_filename.png} % this line for import figure
-    \vspace{3cm} % This is a placeholder space. Please remove this line once you insert your image.
-    \caption{description of Figure 1}
+    \begin{tikzpicture}[
+        node distance=5mm and 9mm,
+        box/.style={draw, rounded corners, align=center, minimum height=9mm, font=\small, fill=gray!8},
+        enc/.style={box, fill=orange!15},
+        dec/.style={box, fill=green!12, minimum height=18mm},
+        head/.style={draw, rounded corners, align=center, font=\scriptsize, minimum width=15mm, minimum height=5mm, fill=blue!8},
+        arr/.style={-{Latex[length=2mm]}, thick}
+    ]
+        \node (img)  [box]                        {Staff\\image};
+        \node (enc)  [enc, right=of img]          {Visual\\Encoder\\{\scriptsize ViT / ResNet}};
+        \node (feat) [box, right=of enc]          {Visual\\feature\\tokens};
+        \node (dec)  [dec, right=of feat]         {Transformer\\Decoder\\{\scriptsize cross-attn,}\\{\scriptsize autoregressive}};
+
+        \node (h2) [head, right=11mm of dec]      {pitch};
+        \node (h1) [head, above=2mm of h2]        {type};
+        \node (h3) [head, below=2mm of h2]        {rhythm};
+        \node (h4) [head, below=2mm of h3]        {attribute};
+        \node (heads) [draw, dashed, rounded corners, fit=(h1)(h2)(h3)(h4),
+                       inner sep=2.5mm, label=above:{\scriptsize 4 output heads}] {};
+
+        \node (out) [box, right=10mm of heads]    {Jianpu\\sequence};
+
+        \draw [arr] (img)  -- (enc);
+        \draw [arr] (enc)  -- (feat);
+        \draw [arr] (feat) -- (dec);
+        \draw [arr] (dec.east) -- (heads.west);
+        \draw [arr] (heads.east) -- (out);
+    \end{tikzpicture}
+    \caption{End-to-end Vision-Encoder-Decoder. A staff image is encoded into visual
+    feature tokens (ViT or ResNet); a Transformer decoder cross-attends to them and
+    autoregressively emits four decoupled token streams (type, pitch, rhythm,
+    attribute) that are mapped to Jianpu.}
     \label{fig:architecture}
 \end{figure}
-

@@ -1,25 +1,92 @@
 \section{Experimental Results}
 \label{section:exp}
-\subsection{Evaluation of Baseline Methods}
+
+\subsection{Preliminary Encoder Ablation}
 \label{section:exp:baseline}
 
-At the current proposal stage, we are actively constructing our custom synthetic dataset (Staff-to-Jianpu image-sequence pairs) and configuring the baseline models. We plan to conduct our preliminary experiments by evaluating the classical Image-to-Sequence baseline (CRNN) and the modern vision-language baseline (TrOCR) on our generated validation set.
+Beyond the proposal stage, we have already implemented the complete system end to
+end: (i) a fully synthetic data pipeline that builds monophonic scores with
+\texttt{music21} and renders them to images with \texttt{verovio}, emitting four
+parallel decoupled label streams (\textit{type} / \textit{pitch} / \textit{rhythm}
+/ \textit{attribute}) so pitch and rhythm accuracy can be measured independently;
+and (ii) our multi-head Vision-Encoder-Decoder, trained on $100{,}000$ deterministic
+synthetic samples and evaluated on a held-out set of $1{,}000$ pre-rendered samples.
 
-To rigorously assess the baseline performance, we will report the Symbol Error Rate (SER) and the Sequence-level Exact Match Rate. The expected format for our preliminary baseline evaluation is presented in Table \ref{table:baseline_results}. 
+As the first milestone we run an \emph{encoder ablation} inside our own architecture,
+holding the decoder, loss, and data fixed and swapping only the visual backbone: an
+ImageNet-pretrained Vision Transformer (\texttt{vit}, with the \texttt{[CLS]} token
+dropped) versus a from-scratch convolutional encoder (\texttt{resnet}). This isolates
+how much of the task is solved by the visual representation alone, before we turn to
+the external baselines (Oemer / CRNN / TrOCR) described in
+Section~\ref{section:evaluation}. All runs use AdamW (\texttt{lr}\,$=5\!\times\!10^{-4}$,
+weight decay $0.01$) with a cosine schedule ($1{,}000$ warmup steps), $30$ epochs,
+\texttt{bf16} mixed precision, and gradient clipping at $1.0$; the decoder is a
+$4$-layer, $6$-head Transformer with $d_{\text{model}}=384$.
+
+Table~\ref{table:baseline_results} reports the results, and
+Figure~\ref{fig:val_curves} shows the corresponding validation curves.
 
 \begin{table}[htbp]
 \centering
-\caption{Preliminary evaluation of baseline methods on the synthetic validation set.}
+\caption{Encoder ablation on the $1{,}000$-sample held-out synthetic validation set.
+Same decoder, loss, and data; only the visual encoder differs.}
 \label{table:baseline_results}
-\begin{tabular}{lcc}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Method} & \textbf{Symbol Error Rate (SER) $\downarrow$} & \textbf{Exact Match Rate $\uparrow$} \\
+\textbf{Encoder} & \textbf{Val SER $\downarrow$} & \textbf{Pitch Acc. $\uparrow$} & \textbf{Rhythm Acc. $\uparrow$} \\
 \midrule
-Baseline 1: Oemer (with heuristic converter) & TBD & TBD \\
-Baseline 2: CRNN (ResNet + RNN + CTC) & TBD & TBD \\
-Baseline 3: TrOCR (ViT + Transformer) & TBD & TBD \\
+\texttt{vit} (ImageNet-pretrained, \texttt{[CLS]} dropped) & \textbf{0.0029} & \textbf{99.85\%} & \textbf{99.78\%} \\
+\texttt{resnet} (from-scratch CNN)                         & $\sim$1.10 & $\sim$0\% & $\sim$30--40\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-These preliminary results will serve as a foundation for designing and tuning our proposed end-to-end architecture. We anticipate that the Transformer-based baseline (TrOCR) will outperform the CTC-based baseline (CRNN) due to its superior sequence modeling capability, which is crucial for capturing the underlying musical syntax and alignment rules without explicit programming.
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/val_ser.png}
+        \caption{Validation SER (log scale).}
+        \label{fig:val_ser}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/val_pitch_accuracy.png}
+        \caption{Validation pitch accuracy.}
+        \label{fig:val_pitch}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/val_rhythm_accuracy.png}
+        \caption{Validation rhythm accuracy.}
+        \label{fig:val_rhythm}
+    \end{subfigure}
+    \caption{Validation metrics over training for the two encoders (\texttt{vit} vs
+    \texttt{resnet}). The \texttt{vit} backbone drives SER down to $\approx0.003$ and
+    pitch/rhythm accuracy to $\approx100\%$, whereas \texttt{resnet} stalls at
+    SER\,$\approx$\,1 and never learns pitch.}
+    \label{fig:val_curves}
+\end{figure}
+
+\subsection{Analysis}
+
+The pretrained \texttt{vit} encoder solves the task almost perfectly, reaching a
+validation SER of $0.0029$ with $99.85\%$ pitch and $99.78\%$ rhythm accuracy. The
+from-scratch \texttt{resnet} learns rhythm only partially and \textbf{structurally
+fails to learn pitch} (accuracy $\approx0\%$), with its pitch cross-entropy pinned at
+the $\approx1.25$ ``NULL-only'' floor --- i.e.\ it predicts the correct token on
+non-note positions but is uninformative on notes.
+
+We attribute this to the encoder geometry rather than the decoder, loss, or data,
+since the \emph{same} decoder and loss reach $99.85\%$ pitch with \texttt{vit}. A
+translation-equivariant CNN that pools image height into a single token per column
+discards the \emph{absolute vertical position} of a notehead --- which is exactly what
+pitch is on a staff. The failure proved invariant to learning-rate sweeps, replacing
+height mean-pooling with height-flatten, increasing vertical resolution, and adding a
+learned vertical positional embedding. A proper fix requires a 2-D feature-token grid
+with 2-D positional embeddings. We therefore adopt \texttt{vit} as the working
+configuration and are currently scaling up its training; the external baselines from
+Section~\ref{section:evaluation} (CRNN, TrOCR, and the Oemer pipeline) remain ongoing
+work for the final report.

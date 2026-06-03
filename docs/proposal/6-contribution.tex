@@ -1,10 +1,14 @@
 \section{Expected Contributions of Each Team Member}
 % Please describe how you would collaborate with each other and specifically what each member would contribute to this project.
+The project is organised into four loosely-coupled modules connected by a shared
+batch/token contract, so members can work in parallel and integrate through pull
+requests. The (tentative) division of labour is:
 \begin{itemize}
-    \item BEN-LU CHEN:
-    \item CHUN-JUI HSU:
-    \item MENG-XI LIN:
-    \item JIAN-AN ZHU:
+    \item \textbf{BEN-LU CHEN} --- \emph{Deployment \& integration}: the end-to-end inference pipeline, the command-line tool, and the interactive demo, plus overall project integration and coordination across modules.
+    \item \textbf{CHUN-JUI HSU} --- \emph{Model}: the Vision-Encoder-Decoder architecture (encoder backbones, multi-head decoder), the training loop, and the per-head losses.
+    \item \textbf{MENG-XI LIN} --- \emph{Data}: the synthetic score generator, the renderer, the closed-set vocabularies, and the multi-encoder data loaders.
+    \item \textbf{JIAN-AN ZHU} --- \emph{Post-processing}: mapping the decoupled semantic token streams to formatted Jianpu output.
 \end{itemize}
 
-% As you just kick off the project, it is very likely that you may need to reallocate the tasks among yourselves as you proceed. Please make sure that you  reach a consensus on the expected contributions. 
+% As you just kick off the project, it is very likely that you may need to reallocate the tasks among yourselves as you proceed. Please make sure that you  reach a consensus on the expected contributions.
+As the project proceeds, tasks may be reallocated among members by consensus to balance the workload and address integration needs.

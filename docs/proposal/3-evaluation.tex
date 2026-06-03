@@ -27,6 +27,7 @@ Since end-to-end models specifically designed for Staff-to-Jianpu translation ar
     \item \textbf{Classic Image-to-Sequence \citep{shi2015crnn}:} CRNN (Convolutional Recurrent Neural Network) trained with CTC loss. This is a standard and robust baseline for visual sequence recognition tasks, which we will adapt for our custom Jianpu token vocabulary.
     \item \textbf{Modern Vision-Language Model \citep{li2021trocr}:} TrOCR (Transformer-based Optical Character Recognition). As a pre-trained Vision-Encoder-Decoder model, it represents a strong architectural baseline for state-of-the-art end-to-end sequence generation.
 \end{itemize}
+As a first step, we additionally run an internal \emph{encoder ablation} within our own Vision-Encoder-Decoder (a pretrained Vision Transformer vs.\ a from-scratch ResNet backbone) to isolate the contribution of the visual representation; preliminary results are reported in Section~\ref{section:exp}. The three external baselines above are then evaluated against the resulting model in the final report.
 
 \subsection{Benchmark Tasks or Datasets}
 % Please provide a list of the benchmark tasks or datasets that you plan to use in your evaluation. For example:

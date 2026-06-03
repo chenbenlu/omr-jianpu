@@ -70,6 +70,42 @@ python -m src.model.train data.train_dir=data/synthetic/train \
 Augmentation is still applied at load time, so the training distribution is
 unchanged; only the (deterministic, `(seed, idx)`-keyed) base render is cached.
 
+## Reference training configs
+
+Commands that reproduce the ablation numbers above on a single RTX 5070
+(12 GB), on-the-fly rendering.
+
+### ViT — val SER 0.0029
+
+```bash
+python -m src.model.train \
+    model=vit \
+    data.train_size=100000 data.batch_size=32 data.num_workers=4 \
+    train.epochs=30 train.eval_every_steps=3125 train.log_every_steps=100 \
+    train.gen_max_length=64 train.mixed_precision=bf16 \
+    optim.optimizer.lr=5e-4 optim.scheduler.num_warmup_steps=2000 \
+    logging=tensorboard
+```
+
+~7 h wall-clock, VRAM ~4.5 GB. SER 0.90 → 0.07 by epoch 5 → **0.0029 best at
+epoch 22**, then plateaus through epoch 30 — use the epoch-22 checkpoint, not
+the final epoch. Expect ~17 GB of `accelerate.save_state` checkpoints to
+accumulate over the run; prune intermediate `step-*-best` dirs periodically.
+
+### ResNet ablation
+
+```bash
+python -m src.model.train \
+    model=resnet \
+    data.train_size=100000 data.batch_size=128 data.num_workers=8 \
+    train.epochs=30 train.eval_every_steps=782 train.log_every_steps=50 \
+    train.gen_max_length=64 train.mixed_precision=bf16 \
+    optim.optimizer.lr=1e-3 optim.scheduler.num_warmup_steps=500 \
+    logging=tensorboard
+```
+
+~3 h wall-clock, VRAM ~6.2 GB.
+
 ## Batch contract
 
 ```python
