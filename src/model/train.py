@@ -29,10 +29,6 @@ def _build_model_config(cfg: DictConfig) -> ModelConfig:
         mask_null_in_loss=MaskNullInLoss(
             **OmegaConf.to_container(cfg.model.mask_null_in_loss)
         ),
-        # ===feature/B-crnn-and-ctr 新增：這三行確保 Hydra 能安全讀取新參數 ===
-        use_ctc=cfg.model.get("use_ctc", False),
-        rnn_hidden_dim=cfg.model.get("rnn_hidden_dim", 256),
-        rnn_bidirectional=cfg.model.get("rnn_bidirectional", True),
     )
 
 
@@ -123,18 +119,7 @@ def main(cfg: DictConfig) -> None:
                     "rhythm": batch["rhythm_ids"],
                     "attribute": batch["attribute_ids"],
                 }
-                # === feature/B-crnn-and-ctr 修改Loss 調用點 ===
-                # --- 修改前程式碼 ---
-                # total, per_head = compute_loss(out["logits"], labels, model_cfg)
-                # --- 修改後程式碼 ---
-                total, per_head = compute_loss(
-                    logits=out["logits"],
-                    labels=labels,
-                    cfg=model_cfg,
-                    target_lengths=batch[
-                        "label_lengths"
-                    ],  # 完美對接，直接傳入數據端原生算好的真實長度
-                )
+                total, per_head = compute_loss(out["logits"], labels, model_cfg)
 
             accelerator.backward(total)
             accelerator.clip_grad_norm_(model.parameters(), cfg.train.grad_clip)

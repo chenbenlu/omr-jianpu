@@ -21,7 +21,7 @@ class MaskNullInLoss:
 @dataclass
 class ModelConfig:
     d_model: int = 384
-    decoder_layers: int = 4  # 在 CTC 模式下，這會直接複用為 RNN (LSTM) 的層數
+    decoder_layers: int = 4
     decoder_heads: int = 6
     decoder_ffn_dim: int = 1536
     dropout: float = 0.1
@@ -33,13 +33,3 @@ class ModelConfig:
     eos_weight: float = 1.0
     loss_weights: LossWeights = field(default_factory=LossWeights)
     mask_null_in_loss: MaskNullInLoss = field(default_factory=MaskNullInLoss)
-
-    # === feature/B-crnn-and-ctr 新增：CRNN + CTC 模式專用參數 ===
-    # 預設為 False，確保舊的 vit.yaml 和 resnet.yaml 不需要修改也能正常運作
-    use_ctc: bool = False
-
-    # BiLSTM 的隱藏層維度，預設 256（雙向展開後特徵維度會變成 256 * 2 = 512）
-    rnn_hidden_dim: int = 256
-
-    # 是否啟用雙向 RNN，光學字元/樂譜識別（OMR）通常設定為 True
-    rnn_bidirectional: bool = True

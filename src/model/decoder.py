@@ -8,7 +8,7 @@ import torch.nn as nn
 from transformers import BartConfig
 from transformers.models.bart.modeling_bart import BartDecoder, shift_tokens_right
 
-from src.data import VocabBundle, Vocabulary
+from src.data import Vocabulary, VocabBundle
 from src.model.config import ModelConfig
 
 _STREAMS: tuple[str, ...] = ("type", "pitch", "rhythm", "attribute")
@@ -138,64 +138,3 @@ class MultiHeadDecoder(nn.Module):
         hidden = out.last_hidden_state
         logits = {name: self.heads[f"head_{name}"](hidden) for name in _STREAMS}
         return logits, out.past_key_values
-
-
-# === feature/B-crnn-and-ctr 新增：CRNN + CTC 非自迴歸時序解碼器 ===
-class MultiHeadCTCDecoder(nn.Module):
-    """基於 BiLSTM + 多頭獨立投影的 CTC 解碼器。
-
-    接收形狀為 (B, W, d_model) 的影像序列特徵，透過深層雙向 LSTM 進行上下文時序建模，
-    最終輸出 4 個分頭的預測 Logits。各分頭的類別數自動擴充 1 位以容納 CTC Blank Token。
-    """
-
-    def __init__(self, vocabs: VocabBundle, cfg: ModelConfig) -> None:
-        super().__init__()
-        self.vocabs = vocabs
-
-        # 1. 建立循環神經網路（複用原有的 decoder_layers 作為 LSTM 堆疊層數）
-        self.rnn = nn.LSTM(
-            input_size=cfg.d_model,
-            hidden_size=cfg.rnn_hidden_dim,
-            num_layers=cfg.decoder_layers,
-            batch_first=True,
-            bidirectional=cfg.rnn_bidirectional,
-            dropout=cfg.dropout if cfg.decoder_layers > 1 else 0.0,
-        )
-
-        # 計算 RNN 雙向展開後的最終特徵維度
-        rnn_out_dim = cfg.rnn_hidden_dim * (2 if cfg.rnn_bidirectional else 1)
-
-        # 2. 建立 4 個並行的線性預測頭
-        # Key point：out_features 設為 len(vocab) + 1，多出來的最後一個位置保留給 CTC Blank
-        self.heads = nn.ModuleDict(
-            {
-                f"head_{name}": nn.Linear(rnn_out_dim, len(vocab) + 1)
-                for name, vocab in vocabs
-            }
-        )
-
-        # 3. 記錄每個分頭對應的 Blank ID (即原 Vocabulary 長度值)
-        self.blank_ids = {name: len(vocab) for name, vocab in vocabs}
-
-    def forward(
-        self,
-        encoder_hidden_states: torch.Tensor,
-        encoder_attention_mask: torch.Tensor | None = None,
-    ) -> dict[str, torch.Tensor]:
-        """CTC 前向傳播計算。
-
-        Args:
-            encoder_hidden_states: 影像編碼器輸出的時序特徵，形狀為 (B, W, d_model)
-            encoder_attention_mask: 影像寬度填充遮罩（選填）
-
-        Returns:
-            dict: 包含 4 個標籤流 Logits Tensor 的字典，每個頭的形狀為 (B, W, len(vocab) + 1)
-        """
-        # 影像特徵通過雙向 LSTM 進行時序建模
-        # rnn_out 的形狀: (B, W, rnn_out_dim)
-        rnn_out, _ = self.rnn(encoder_hidden_states)
-
-        # 分別投影到 4 個並行的獨立詞彙表分類空間
-        logits = {name: self.heads[f"head_{name}"](rnn_out) for name, _ in self.vocabs}
-
-        return logits
