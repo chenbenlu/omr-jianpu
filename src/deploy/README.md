@@ -144,6 +144,13 @@ override (auto/vit/resnet), max decode length, and **Notation view**: Engraved
 (reads `data/synthetic/val/manifest.jsonl` to also show ground truth). The
 inferencer is cached with `@st.cache_resource` keyed on `(ckpt, encoder)`.
 
+On Spaces (`SPACE_ID` set), a **Model** selector instead chooses between the
+weight variants found in the downloaded HF repo: `Baseline (clean scores)` at
+the repo root and `Photo fine-tuned (robust to photos)` in the `photo-finetuned/`
+subfolder (defaults to the photo model when present). To publish the photo
+model, upload its `model.safetensors` into `photo-finetuned/` in the model repo:
+`huggingface-cli upload <repo> <best>/model.safetensors photo-finetuned/model.safetensors`.
+
 ## CLI
 
 ```bash

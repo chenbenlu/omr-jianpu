@@ -45,6 +45,22 @@ VAL_MANIFEST_NAME = "sample_manifest.jsonl" if ON_SPACES else "manifest.jsonl"
 # at its own weights without editing source.
 DEFAULT_MODEL_REPO = "chenbenlu/omr-to-jianpu-vit"
 
+# Selectable model variants inside the Spaces model repo (label -> subdir).
+# Baseline weights sit at the repo root (".") for backward compat; the photo
+# fine-tune (robust to phone photos) is an optional `photo-finetuned/` subfolder.
+# The photo variant is listed first so it is the default selection when present.
+SPACES_MODEL_VARIANTS: dict[str, str] = {
+    "Photo fine-tuned (robust to photos)": "photo-finetuned",
+    "Baseline (clean scores)": ".",
+}
+
+
+def _has_weights(d: Path) -> bool:
+    """True if `d` holds `model.safetensors` directly or in a `step-N-best/`."""
+    return (d / "model.safetensors").exists() or any(
+        (p / "model.safetensors").exists() for p in d.glob("step-*-best")
+    )
+
 
 @st.cache_resource(show_spinner="Downloading model from Hugging Face Hub…")
 def resolve_spaces_checkpoint() -> str:
@@ -143,10 +159,21 @@ def main() -> None:
     with st.sidebar:
         st.header("Model")
         if ON_SPACES:
-            ckpt_dir = resolve_spaces_checkpoint()
+            repo_root = Path(resolve_spaces_checkpoint())
+            available = {
+                label: str(repo_root / sub)
+                for label, sub in SPACES_MODEL_VARIANTS.items()
+                if _has_weights(repo_root / sub)
+            }
+            if available:
+                choice = st.selectbox("Model", list(available))
+                ckpt_dir = available[choice]
+            else:
+                # Repo predates the subfolder layout: load whatever is at root.
+                ckpt_dir = str(repo_root)
             encoder = "vit"
             max_length = 64
-            st.caption("ViT encoder · checkpoint pulled from the HF Hub")
+            st.caption("ViT encoder · weights from the HF Hub")
         else:
             ckpt_dirs = sorted(p.name for p in CKPT_ROOT.glob("*") if p.is_dir())
             if ckpt_dirs:
