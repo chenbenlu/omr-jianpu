@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import hydra
 import torch
 from accelerate import Accelerator
 from omegaconf import DictConfig, OmegaConf
+from safetensors.torch import load_file, save_file
 from tqdm import tqdm
 
 from src.data import build_default_vocabs, create_dataloaders, get_encoder_spec
@@ -13,6 +15,45 @@ from src.model.config import LossWeights, MaskNullInLoss, ModelConfig
 from src.model.evaluation import run_validation
 from src.model.losses import compute_loss
 from src.model.model import OMRModel
+
+_STEP_BEST_RE = re.compile(r"step-(\d+)-best")
+
+
+def _resolve_checkpoint(ckpt_dir: Path) -> Path:
+    """Return the directory holding `model.safetensors`.
+
+    Accepts either a leaf checkpoint dir or a run dir containing many
+    `step-N-best/` subdirs; in the latter case picks the highest step (the best
+    val-SER snapshot, saved last). Mirrors the deploy-side resolver but is kept
+    local so `src.model` does not import `src.deploy`.
+    """
+    if (ckpt_dir / "model.safetensors").exists():
+        return ckpt_dir
+    candidates = [
+        (int(m.group(1)), p)
+        for p in ckpt_dir.iterdir()
+        if p.is_dir() and (m := _STEP_BEST_RE.fullmatch(p.name))
+    ]
+    if not candidates:
+        raise FileNotFoundError(
+            f"no model.safetensors and no step-N-best/ subdir under {ckpt_dir}"
+        )
+    return max(candidates, key=lambda c: c[0])[1]
+
+
+def _save_model_only(accelerator: Accelerator, model: OMRModel, out_dir: Path) -> None:
+    """Write just `model.safetensors` (no optimizer/rng) for a periodic snapshot.
+
+    Lets fine-tuning keep multiple selectable candidates cheaply (~0.4 GB each
+    vs ~1.1 GB for a full `save_state`). The dir is named `step-N` (no `-best`)
+    so the best-checkpoint resolver ignores it; point inference at it directly.
+    """
+    if not accelerator.is_local_main_process:
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sd = accelerator.unwrap_model(model).state_dict()
+    sd = {k: v.detach().cpu().contiguous() for k, v in sd.items()}
+    save_file(sd, str(out_dir / "model.safetensors"))
 
 
 def _build_model_config(cfg: DictConfig) -> ModelConfig:
@@ -43,6 +84,21 @@ def main(cfg: DictConfig) -> None:
     model_cfg = _build_model_config(cfg)
     model = OMRModel(encoder=encoder, vocabs=vb, cfg=model_cfg)
 
+    # Warm-start (fine-tuning): load weights from a prior checkpoint before the
+    # optimizer/accelerator wrap them. strict=False tolerates head-naming drift;
+    # missing/unexpected should both be 0 for an identical architecture.
+    init_from = cfg.checkpoint.get("init_from")
+    if init_from:
+        wdir = _resolve_checkpoint(Path(init_from))
+        missing, unexpected = model.load_state_dict(
+            load_file(str(wdir / "model.safetensors")), strict=False
+        )
+        accelerator.print(
+            f"warm-start from {wdir}: "
+            f"missing={len(missing)} unexpected={len(unexpected)}"
+        )
+
+    aug_profile = cfg.data.get("aug_profile", "default")
     loaders = create_dataloaders(
         out_dir=cfg.data.out_dir,
         encoder=spec,
@@ -51,6 +107,7 @@ def main(cfg: DictConfig) -> None:
         num_workers=cfg.data.num_workers,
         max_seq_len=cfg.data.max_seq_len,
         seed=cfg.seed,
+        aug_profile=aug_profile,
     )
     train_loader, val_loader = loaders["train"], loaders["val"]
 
@@ -67,7 +124,7 @@ def main(cfg: DictConfig) -> None:
         train_ds = PreRenderedOMRDataset(
             Path(train_dir) / "manifest.jsonl",
             vb,
-            spec.build_train_transform(),
+            spec.build_train_transform(aug_profile),
             max_seq_len=cfg.data.max_seq_len,
         )
         train_loader = DataLoader(
@@ -168,6 +225,14 @@ def main(cfg: DictConfig) -> None:
                     best_ser = metrics.ser
                     accelerator.save_state(str(ckpt_root / f"step-{step}-best"))
                 model.train()
+
+            save_every = cfg.train.get("save_every_steps", 0)
+            if (
+                save_every
+                and step % save_every == 0
+                and accelerator.is_local_main_process
+            ):
+                _save_model_only(accelerator, model, ckpt_root / f"step-{step}")
 
     if accelerator.is_local_main_process:
         logger.close()

@@ -191,6 +191,66 @@ def test_resnet_transform_clips_overflow() -> None:
     assert out.shape == (1, 128, spec.max_width)
 
 
+def _op_names(pipe) -> list[str]:
+    return [type(t).__name__ for t in pipe.transforms]
+
+
+def _child_names(op) -> list[str]:
+    return [type(c).__name__ for c in getattr(op, "transforms", [])]
+
+
+def test_photo_profile_shape() -> None:
+    pipe = get_encoder_spec("vit").build_train_transform("photo")
+    out = pipe(image=np.full((300, 1200, 3), 255, dtype=np.uint8))["image"]
+    assert out.shape == (3, 224, 224)
+    assert out.dtype == torch.float32
+
+
+def test_photo_profile_photometric_before_resize_geometric_after_pad() -> None:
+    pipe = get_encoder_spec("vit").build_train_transform("photo")
+    names = _op_names(pipe)
+    resize_idx = names.index("LongestMaxSize")
+    pad_idx = names.index("PadIfNeeded")
+    # Every photometric op acts on the native-resolution image (before resize/pad).
+    for photometric in (
+        "RandomBrightnessContrast",
+        "RandomGamma",
+        "RandomShadow",
+        "GaussNoise",
+        "ISONoise",
+        "ImageCompression",
+    ):
+        assert names.index(photometric) < resize_idx, photometric
+    # The geometric OneOf (Affine/Perspective) acts on the padded 224x224 canvas.
+    geom_idx = next(
+        i
+        for i, t in enumerate(pipe.transforms)
+        if type(t).__name__ == "OneOf" and "Affine" in _child_names(t)
+    )
+    assert geom_idx > pad_idx
+
+
+def test_default_profile_unchanged() -> None:
+    # Validated baseline recipe: channel/resize/pad, THEN the 3 legacy
+    # photometric ops (slot B, after pad), then normalize/tensor.
+    names = _op_names(get_encoder_spec("vit").build_train_transform())
+    assert names == [
+        "Lambda",
+        "LongestMaxSize",
+        "PadIfNeeded",
+        "RandomBrightnessContrast",
+        "GaussianBlur",
+        "GaussNoise",
+        "Normalize",
+        "ToTensorV2",
+    ]
+
+
+def test_unknown_aug_profile_raises() -> None:
+    with pytest.raises(KeyError):
+        get_encoder_spec("vit").build_train_transform("nope")
+
+
 # ---------------------------------------------------------------------------
 # Collate
 # ---------------------------------------------------------------------------

@@ -105,6 +105,7 @@ def create_dataloaders(
     generator_config: GeneratorConfig | None = None,
     render_config: RenderConfig | None = None,
     pin_memory: bool = True,
+    aug_profile: str = "default",
 ) -> dict[str, DataLoader]:
     spec = get_encoder_spec(encoder)
     out_dir = Path(out_dir)
@@ -118,7 +119,7 @@ def create_dataloaders(
 
     generator = MelodyGenerator(generator_config)
     renderer = StaffRenderer(render_config)
-    train_transform = spec.build_train_transform()
+    train_transform = spec.build_train_transform(aug_profile)
     eval_transform = spec.build_eval_transform()
 
     train_ds: Dataset = SyntheticOMRDataset(
