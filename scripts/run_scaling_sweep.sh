@@ -33,12 +33,13 @@ run_one() {
     return 0  # never stop the sweep on a single failure
 }
 
-# Resume sweep: skip CRNN {1k, 5k, 20k} (done in prior attempt that crashed at CRNN 50k).
-# 100k already exists for both models; runs here are CRNN 50k + ViT {1k, 5k, 20k, 50k}.
-run_one crnn  50000  128 8 1e-3 500
-run_one vit   1000   32  4 5e-4 2000
-run_one vit   5000   32  4 5e-4 2000
-run_one vit   20000  32  4 5e-4 2000
-run_one vit   50000  32  4 5e-4 2000
+# ViT-only sweep, workers=8 (after restart sweep — workers=4 path no longer
+# matches v1's fast trajectory but is also broken in a different way; workers=8
+# converges to ~SER 0.026 like the June-2 vit-20260602-122323 run).
+# CRNN runs collected on pre-revert main are preserved in /workspace/runs/.
+run_one vit   1000   32  8 5e-4 2000
+run_one vit   5000   32  8 5e-4 2000
+run_one vit   20000  32  8 5e-4 2000
+run_one vit   50000  32  8 5e-4 2000
 
 echo "[$(date +%H:%M:%S)] === sweep complete ==="
