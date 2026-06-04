@@ -13,45 +13,73 @@ of `src.data.create_dataloaders`. The decoder is shared: a Transformer with
 **four output heads** (one per label stream) so we can measure pitch accuracy
 and rhythm accuracy independently when comparing encoders.
 
-## Encoder ablation: ViT works, ResNet has a structural pitch limitation
+## Encoder + decoder ablation
 
-Same four-head decoder, same losses, same data — only the encoder differs
-(full 100k-sample × 30-epoch runs, validated on the held-out synthetic set):
+Same four-stream decoupled labels and same val split; the variable is the
+encoder–decoder pairing. Full 100k-sample × 30-epoch runs on the 1,000-sample
+held-out synthetic split:
 
-| Encoder | val SER ↓ | pitch acc ↑ | rhythm acc ↑ |
-|---|---|---|---|
-| `vit` (pretrained, `[CLS]` dropped) | **0.0029** | **99.85%** | **99.78%** |
-| `resnet` (from-scratch CNN) | ~1.10 | **~0%** | ~30–40% |
+| Encoder | Decoder / loss | val SER ↓ | pitch acc ↑ | rhythm acc ↑ |
+|---|---|---|---|---|
+| `vit` (pretrained, `[CLS]` dropped) | AR multi-head BART | **0.0029** | **99.85%** | 99.78% |
+| `resnet` (from-scratch CNN) | AR multi-head BART | ~1.10 | **~0%** | ~30–40% |
+| `resnet` (same encoder) | **CRNN + per-head CTC** (BiLSTM + 4 heads) | **0.0000** | **100%** | **100%** |
 
-ViT learns the task almost perfectly. The from-scratch ResNet encoder reaches
-comparable *type* and partial *rhythm* accuracy but **never learns pitch** —
-its per-position pitch cross-entropy is pinned at ≈1.25 throughout training.
-That floor is exactly the loss of a head that predicts `<NULL>` correctly on
-non-note positions and is uninformative on notes (≈ `P(note) · ln |pitch
-vocab|`), i.e. zero pitch signal.
+ViT+AR solves the task. ResNet+AR fails on pitch: its per-position pitch
+cross-entropy is pinned at ≈1.25 throughout training — exactly the floor of
+a head that predicts `<NULL>` correctly on non-note positions and is
+uninformative on notes (≈ `P(note) · ln |pitch vocab|`), i.e. zero pitch
+signal. The third row, swapping only the decoder for a BiLSTM + per-head
+CTC, solves the task perfectly on the *same* column-pooled CNN features
+that the AR decoder cannot read for pitch.
 
-**Diagnosis — a representation limitation, not a tuning one.** `ResNetEncoder`
-collapses the image *height* into a single token per image column
-(`feat.mean(dim=2)` → a 1-D sequence over width). But a convolutional stack is
-**translation-equivariant**: a notehead produces the same local features
-regardless of *where* it sits vertically, so the column features encode "a note
-is here" but not its **absolute vertical position** — and pitch *is* the
-vertical position of the notehead on the staff. Collapsing height therefore
-discards precisely the cue pitch depends on.
+**Diagnosis — the failure is the AR-over-1-D-features pairing, not the
+encoder alone.** The original explanation (translation-equivariant CNN
+collapses image height into one token per column, losing absolute vertical
+position which is what pitch is) is the right description of what the
+ResNet encoder discards, but it is *not* the binding constraint. CTC's
+flexible alignment removes the one-column-one-symbol assumption that AR
+cross-attention enforces, and the BiLSTM's bidirectional context lets each
+column draw on neighbouring columns' staff-line geometry as a vertical
+reference frame. Once both are in place, pitch recovers fully — invariant
+to learning rate, vertical resolution, or explicit vertical pos-emb (none
+of those interventions moved the AR pitch floor either).
 
-The ≈1.25 floor proved invariant to every intervention tried: learning rate
-(5e-4 ↔ 1.4e-3), replacing the height mean-pool with a height *flatten*,
-increasing vertical resolution (H÷32 → H÷8), and even adding an explicit
-learned vertical positional embedding. The same decoder + loss reaches 99.85%
-pitch with the ViT encoder, so the bottleneck is the ResNet encoder's 1-D
-representation (and the from-scratch cross-attention alignment it forces), not
-the decoder, the loss, or the data.
+**Status on `main`.** Only the AR architectures live in this branch:
+`vit` is the production config; `resnet` is retained as the documented
+negative example of the broken pairing. The CRNN+CTC variant lives on the
+`feature/B-crnn-and-ctr` branch (`configs/model/crnn.yaml`, `use_ctc=true`)
+— empirically validated end-to-end at 100k samples but not yet integrated
+with `src/deploy/`, so it has not been merged.
 
-A principled fix would preserve 2-D structure — emit an `H_out × W_out` grid of
-CNN-feature tokens with 2-D positional embeddings (a CNN-feature analogue of
-ViT) rather than collapsing to columns. The current `ResNetEncoder` is retained
-deliberately as the empirical demonstration of this limitation; **`vit` is the
-working configuration.**
+## Sample-efficiency sweep: how much data does each architecture need?
+
+Same decoder/loss/optimizer/30-epoch budget, sweeping `data.train_size` at
+five log-spaced points. CRNN+CTC numbers are from the `feature/B-crnn-and-ctr`
+branch (`model=crnn`); ViT-AR numbers are from this branch (`model=vit`).
+Best val SER across 30 epochs on the same 1,000-sample held-out split:
+
+| train_size | CRNN+CTC SER | CRNN pitch | ViT-AR SER | ViT pitch |
+|-----------:|-------------:|-----------:|-----------:|----------:|
+| 1,000   | 0.948  | 0.0%   | 1.07   | 1.1%   |
+| 5,000   | **0.067**  | 97.1%  | 0.866  | 3.7%   |
+| 20,000  | **0.010**  | 99.95% | 0.894  | 0.2%   |
+| 50,000  | **0.0002** | 100%   | **0.032**  | 97.5%  |
+| 100,000 | **0.000**  | 100%   | **0.0029** | 99.85% |
+
+CRNN+CTC reaches usable transcription quality already at 5k samples;
+ViT-AR's pitch head fails to learn at all until 50k samples and shows a
+sharp data threshold between 20k and 50k. **This inverts the common
+expectation that ImageNet pretraining helps in the low-data regime** — the
+pretrained ViT prior carries no music-notation structure, and the ~310-way
+pitch vocabulary needs roughly 1k–2k examples per class before the AR
+pitch head escapes the NULL-only loss floor. CTC's flexible alignment +
+BiLSTM context make per-symbol learning proportionately more
+sample-efficient.
+
+Outputs in `reports/scaling/`: `summary.csv`, `summary.md`,
+`val_ser_vs_train_size.png`, `val_pitch_acc_vs_train_size.png`, and a
+paper-ready paragraph in `paper_paragraph.md`.
 
 ## Training data path
 
