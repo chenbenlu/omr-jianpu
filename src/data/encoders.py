@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import albumentations as A
@@ -31,8 +32,8 @@ class EncoderSpec:
     def is_dynamic_width(self) -> bool:
         return self.target_width is None
 
-    def build_train_transform(self) -> A.Compose:
-        return _build_transform(self, train=True)
+    def build_train_transform(self, aug_profile: str = "default") -> A.Compose:
+        return _build_transform(self, train=True, aug_profile=aug_profile)
 
     def build_eval_transform(self) -> A.Compose:
         return _build_transform(self, train=False)
@@ -70,28 +71,140 @@ def _resize_to_height_then_clip(
     return resized
 
 
-def _build_transform(spec: EncoderSpec, *, train: bool) -> A.Compose:
-    pre_ops: list[A.BasicTransform] = []
+# --- Augmentation profiles ---------------------------------------------------
+#
+# A profile maps to two op groups around the resize/pad stage:
+#   slot A: photometric ops, run BEFORE LongestMaxSize/PadIfNeeded so they act on
+#           the native-resolution image (realistic JPEG/ISO/blur/noise) and never
+#           paint the white padding margins.
+#   slot B: geometric ops only, run AFTER padding on the (H, W) canvas; exposed
+#           regions are filled white to match the pad + Normalize(mean=0.5).
+# Profiles are consulted only for train transforms; eval gets neither slot.
+
+AugOps = list[A.BasicTransform]
+
+
+def _default_aug(spec: EncoderSpec) -> tuple[AugOps, AugOps]:
+    # Legacy photometric ops, historically applied AFTER pad. Kept in slot B so
+    # the validated baseline recipe stays byte-identical.
+    slot_b: AugOps = [
+        A.RandomBrightnessContrast(brightness_limit=0.15, contrast_limit=0.15, p=0.5),
+        A.GaussianBlur(blur_limit=(3, 3), sigma_limit=(0.1, 1.5), p=0.3),
+        A.GaussNoise(std_range=(0.02, 0.08), mean_range=(0.0, 0.0), p=0.3),
+    ]
+    return [], slot_b
+
+
+# `photo` is the union of three photometric/geometric component groups so the
+# ablation profiles below can drop one group at a time (leave-one-out). Geometric
+# warps are kept mild because pitch is absolute vertical position.
+
+
+def _lighting_ops() -> AugOps:
+    # Uneven illumination of a printed page under a phone camera.
+    return [
+        A.RandomBrightnessContrast(brightness_limit=0.25, contrast_limit=0.25, p=0.6),
+        A.RandomGamma(gamma_limit=(80, 120), p=0.3),
+        A.RandomShadow(num_shadows_limit=(1, 2), p=0.25),
+    ]
+
+
+def _degrade_ops(spec: EncoderSpec) -> AugOps:
+    # Optical + sensor degradation: blur, grain, JPEG. Photometric (pre-resize).
+    ops: AugOps = [
+        A.OneOf(
+            [
+                A.MotionBlur(blur_limit=(3, 7)),
+                A.GaussianBlur(blur_limit=(3, 5), sigma_limit=(0.2, 2.0)),
+                A.Defocus(radius=(1, 3)),
+            ],
+            p=0.4,
+        ),
+        A.GaussNoise(std_range=(0.02, 0.10), mean_range=(0.0, 0.0), p=0.3),
+    ]
+    if spec.channels == 3:
+        # ISO grain and JPEG artifacts are defined on 3-channel camera images.
+        ops.append(A.ISONoise(p=0.2))
+        ops.append(A.ImageCompression(quality_range=(40, 85), p=0.4))
+    return ops
+
+
+def _geometric_ops() -> AugOps:
+    # Camera-angle skew: applied AFTER pad (slot B), white fill for exposed areas.
+    return [
+        A.OneOf(
+            [
+                A.Affine(
+                    scale=(0.92, 1.08),
+                    rotate=(-4, 4),
+                    shear=(-3, 3),
+                    translate_percent=(0.0, 0.03),
+                    border_mode=cv2.BORDER_CONSTANT,
+                    fill=255,
+                    p=1.0,
+                ),
+                A.Perspective(
+                    scale=(0.02, 0.05),
+                    border_mode=cv2.BORDER_CONSTANT,
+                    fill=255,
+                    p=1.0,
+                ),
+            ],
+            p=0.6,
+        ),
+    ]
+
+
+def _photo_aug(spec: EncoderSpec) -> tuple[AugOps, AugOps]:
+    return _lighting_ops() + _degrade_ops(spec), _geometric_ops()
+
+
+def _photo_no_geom(spec: EncoderSpec) -> tuple[AugOps, AugOps]:
+    return _lighting_ops() + _degrade_ops(spec), []
+
+
+def _photo_no_light(spec: EncoderSpec) -> tuple[AugOps, AugOps]:
+    return _degrade_ops(spec), _geometric_ops()
+
+
+def _photo_no_degrade(spec: EncoderSpec) -> tuple[AugOps, AugOps]:
+    return _lighting_ops(), _geometric_ops()
+
+
+_AUG_PROFILES: dict[str, Callable[[EncoderSpec], tuple[AugOps, AugOps]]] = {
+    "default": _default_aug,
+    "photo": _photo_aug,
+    "photo_no_geom": _photo_no_geom,
+    "photo_no_light": _photo_no_light,
+    "photo_no_degrade": _photo_no_degrade,
+}
+
+
+def _build_transform(
+    spec: EncoderSpec, *, train: bool, aug_profile: str = "default"
+) -> A.Compose:
+    pre_resize_ops: AugOps = []
+    resize_pad_ops: AugOps = []
 
     if spec.is_dynamic_width():
-        # Fixed height, aspect-preserving width.
+        # Fixed height, aspect-preserving width (channel convert fused in).
         def _shape_lambda(image: np.ndarray, **kwargs: object) -> np.ndarray:
             img = _to_channels(image, spec.channels)
             return _resize_to_height_then_clip(img, spec.target_height, spec.max_width)
 
-        pre_ops.append(A.Lambda(image=_shape_lambda, p=1.0))
+        resize_pad_ops.append(A.Lambda(image=_shape_lambda, p=1.0))
     else:
-        # Fixed-size: aspect-preserving resize then white-pad to (H, W).
+        # Fixed-size: settle channels, then aspect-preserving resize + white-pad.
         assert spec.target_width is not None
 
         def _channel_lambda(image: np.ndarray, **kwargs: object) -> np.ndarray:
             return _to_channels(image, spec.channels)
 
-        pre_ops.append(A.Lambda(image=_channel_lambda, p=1.0))
-        pre_ops.append(
+        pre_resize_ops.append(A.Lambda(image=_channel_lambda, p=1.0))
+        resize_pad_ops.append(
             A.LongestMaxSize(max_size_hw=(spec.target_height, spec.target_width))
         )
-        pre_ops.append(
+        resize_pad_ops.append(
             A.PadIfNeeded(
                 min_height=spec.target_height,
                 min_width=spec.target_width,
@@ -101,22 +214,24 @@ def _build_transform(spec: EncoderSpec, *, train: bool) -> A.Compose:
             )
         )
 
-    aug_ops: list[A.BasicTransform] = []
+    slot_a: AugOps = []
+    slot_b: AugOps = []
     if train:
-        aug_ops = [
-            A.RandomBrightnessContrast(
-                brightness_limit=0.15, contrast_limit=0.15, p=0.5
-            ),
-            A.GaussianBlur(blur_limit=(3, 3), sigma_limit=(0.1, 1.5), p=0.3),
-            A.GaussNoise(std_range=(0.02, 0.08), mean_range=(0.0, 0.0), p=0.3),
-        ]
+        try:
+            make = _AUG_PROFILES[aug_profile]
+        except KeyError as exc:
+            known = ", ".join(sorted(_AUG_PROFILES))
+            raise KeyError(
+                f"Unknown aug_profile '{aug_profile}'. Known: {known}"
+            ) from exc
+        slot_a, slot_b = make(spec)
 
     post_ops = [
         A.Normalize(mean=spec.normalize_mean, std=spec.normalize_std),
         ToTensorV2(),
     ]
 
-    return A.Compose(pre_ops + aug_ops + post_ops)
+    return A.Compose(pre_resize_ops + slot_a + resize_pad_ops + slot_b + post_ops)
 
 
 VIT_SPEC = EncoderSpec(

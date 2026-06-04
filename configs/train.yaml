@@ -16,6 +16,11 @@ data:
   # Optional pre-rendered train split (PNGs on disk). When set, training reads
   # from disk instead of rendering with verovio each epoch -> GPU-bound.
   train_dir: null
+  # Train-time augmentation profile (src/data/encoders.py _AUG_PROFILES):
+  #   default = mild photometric (validated baseline recipe)
+  #   photo   = photo-realistic (geometric warp + lighting/blur/noise/JPEG) for
+  #             the synthetic -> phone-photo gap. Eval is never augmented.
+  aug_profile: default
 
 train:
   epochs: 30
@@ -32,6 +37,9 @@ train:
 checkpoint:
   dir: checkpoints/${run_name}
   keep_top_k: 3
+  # Warm-start: load model weights from a prior run dir or a step-N-best/ leaf
+  # before training (fine-tuning). Null = train from HF-pretrained encoder only.
+  init_from: null
 
 hydra:
   run:
