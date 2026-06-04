@@ -1,0 +1,44 @@
+\section{Discussion and Limitations}
+\label{section:discussion}
+
+\paragraph{Why the AR pitch failure was misread.} The headline lesson is
+methodological: an architecture conclusion (``a from-scratch ResNet cannot learn
+pitch'') was really a statement about the \emph{decoder's alignment}, not the
+encoder. Because our four-head design measures pitch separately, and because the
+CTC variant reuses the identical encoder features, we could falsify the encoder
+explanation directly. The decoupled-stream contract was what made the negative
+result interpretable rather than merely discouraging.
+
+\paragraph{Pretraining is not a free low-data prior.} The sample-efficiency gap
+(\S\ref{sec:exp:scaling}) cautions against assuming ImageNet-pretrained encoders
+help most when data is scarce. For a task whose key cue---absolute vertical
+position---is orthogonal to natural-image semantics, the prior contributes little,
+and the inductive bias of the decoder (CTC's alignment flexibility) dominates
+sample efficiency.
+
+\paragraph{Limitations.} (i)~\emph{Scope.} We handle only printed, monophonic
+notation; chords, slurs, multi-voice scores, and handwriting are out of scope, and
+real-world utility on polyphonic or hand-written music remains untested.
+(ii)~\emph{No external baselines.} Our comparisons are internal (ViT-AR vs
+ResNet-AR vs CRNN+CTC). We did not run the pipeline OMR baseline (Oemer) or a
+pretrained Vision-Encoder-Decoder OCR baseline (TrOCR) end-to-end on this task; a
+head-to-head against those systems is future work. (iii)~\emph{Statistical power.}
+The scaling sweep uses a single seed per cell, so we report trends, not confidence
+intervals; the ViT-AR data threshold in particular may move with seed and
+data-loader settings, though the order-of-magnitude gap to CRNN+CTC is stable.
+(iv)~\emph{Sim-to-real ceiling.} Even after fine-tuning, real-photo pitch accuracy
+is $64.5\%$---useful but far from the clean $99.8\%$; the dominant residual is
+camera-angle vertical mis-registration, which the height-preserving CRNN+CTC
+encoder is well-positioned to attack but which we have not yet combined with the
+photo augmentation. (v)~\emph{Deployment gap.} The best model (CRNN+CTC) is not
+yet the deployed one: its CTC decoder needs the type-anchored collapse wired into
+the inference path, and its recurrent weights require a serialization fix to
+survive checkpoint reloading. The deployed demo therefore ships the ViT-AR model.
+
+\paragraph{Future work.} The natural next step is to bring CRNN+CTC---which is both
+more accurate and far more sample-efficient---through deployment, then fine-tune
+\emph{it} with the photo augmentation, since its preserved vertical resolution
+directly targets the sim-to-real bottleneck. Adding the external Oemer/TrOCR
+baselines would situate our system against the broader OMR literature, and
+extending the generator toward polyphony would test how far the four-stream
+contract scales.

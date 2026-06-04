@@ -1,42 +1,39 @@
-\section{Experimental Results}
+\section{Experiments}
 \label{section:exp}
 
-\subsection{Preliminary Encoder Ablation}
-\label{section:exp:baseline}
+All experiments use the synthetic corpus of \S\ref{sec:method:data}: training
+samples are generated on the fly, and we evaluate on a held-out, pre-rendered
+$1{,}000$-sample validation set (used for checkpoint selection) and an analogous
+$1{,}000$-sample test set. Unless noted, the decoder, loss, optimiser, and
+$30$-epoch budget are held fixed at the values in \S\ref{sec:method:train}; only
+the factor under study varies. We organise the study around three questions:
+which visual representation and decoder actually solve the task
+(\S\ref{sec:exp:arch}), how the two paradigms scale with data
+(\S\ref{sec:exp:scaling}), and whether the model transfers to real photographs
+(\S\ref{sec:exp:sim2real}). \S\ref{sec:exp:deploy} describes the deployed demo.
 
-Beyond the proposal stage, we have already implemented the complete system end to
-end: (i) a fully synthetic data pipeline that builds monophonic scores with
-\texttt{music21} and renders them to images with \texttt{verovio}, emitting four
-parallel decoupled label streams (\textit{type} / \textit{pitch} / \textit{rhythm}
-/ \textit{attribute}) so pitch and rhythm accuracy can be measured independently;
-and (ii) our multi-head Vision-Encoder-Decoder, trained on $100{,}000$ deterministic
-synthetic samples and evaluated on a held-out set of $1{,}000$ pre-rendered samples.
+\subsection{Which representation learns pitch?}
+\label{sec:exp:arch}
 
-As the first milestone we run an \emph{encoder ablation} inside our own architecture,
-holding the decoder, loss, and data fixed and swapping only the visual backbone: an
-ImageNet-pretrained Vision Transformer (\texttt{vit}, with the \texttt{[CLS]} token
-dropped) versus a from-scratch convolutional encoder (\texttt{resnet}). This isolates
-how much of the task is solved by the visual representation alone, before we turn to
-the external baselines (Oemer / CRNN / TrOCR) described in
-Section~\ref{section:evaluation}. All runs use AdamW (\texttt{lr}\,$=5\!\times\!10^{-4}$,
-weight decay $0.01$) with a cosine schedule ($1{,}000$ warmup steps), $30$ epochs,
-\texttt{bf16} mixed precision, and gradient clipping at $1.0$; the decoder is a
-$4$-layer, $6$-head Transformer with $d_{\text{model}}=384$.
-
-Table~\ref{table:baseline_results} reports the results, and
-Figure~\ref{fig:val_curves} shows the corresponding validation curves.
+We hold the decoder, loss, and data fixed and vary only the visual backbone and
+the decoding paradigm, at $100{,}000$ training samples. Table~\ref{table:arch}
+reports the result and Figure~\ref{fig:val_curves} the corresponding
+autoregressive validation curves.
 
 \begin{table}[htbp]
 \centering
-\caption{Encoder ablation on the $1{,}000$-sample held-out synthetic validation set.
-Same decoder, loss, and data; only the visual encoder differs.}
-\label{table:baseline_results}
+\caption{Architecture comparison on the $1{,}000$-sample held-out synthetic
+validation set ($100{,}000$ training samples, $30$ epochs). Same data and
+four-head targets throughout; only the encoder and decoder differ. AR =
+autoregressive decoder; CTC = BiLSTM\,+\,per-head CTC decoder.}
+\label{table:arch}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Encoder} & \textbf{Val SER $\downarrow$} & \textbf{Pitch Acc. $\uparrow$} & \textbf{Rhythm Acc. $\uparrow$} \\
+\textbf{Encoder + decoder} & \textbf{Val SER $\downarrow$} & \textbf{Pitch Acc.\ $\uparrow$} & \textbf{Rhythm Acc.\ $\uparrow$} \\
 \midrule
-\texttt{vit} (ImageNet-pretrained, \texttt{[CLS]} dropped) & \textbf{0.0029} & \textbf{99.85\%} & \textbf{99.78\%} \\
-\texttt{resnet} (from-scratch CNN)                         & $\sim$1.10 & $\sim$0\% & $\sim$30--40\% \\
+\texttt{vit} (ImageNet-pretrained) + AR        & $0.0029$          & $99.85\%$          & $99.78\%$ \\
+\texttt{resnet} (from-scratch CNN) + AR        & ${\sim}1.01$      & ${\sim}0\%$        & ${\sim}40\%$ \\
+\texttt{resnet} + BiLSTM + CTC (CRNN)          & $\mathbf{0.0000}$ & $\mathbf{100\%}$   & $\mathbf{100\%}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -63,30 +60,183 @@ Same decoder, loss, and data; only the visual encoder differs.}
         \caption{Validation rhythm accuracy.}
         \label{fig:val_rhythm}
     \end{subfigure}
-    \caption{Validation metrics over training for the two encoders (\texttt{vit} vs
-    \texttt{resnet}). The \texttt{vit} backbone drives SER down to $\approx0.003$ and
-    pitch/rhythm accuracy to $\approx100\%$, whereas \texttt{resnet} stalls at
-    SER\,$\approx$\,1 and never learns pitch.}
+    \caption{Autoregressive validation metrics over training for the two encoders
+    (\texttt{vit} vs \texttt{resnet}). The \texttt{vit} backbone drives SER to
+    ${\approx}0.003$ and pitch/rhythm to ${\approx}100\%$, whereas \texttt{resnet}
+    stalls at SER\,${\approx}1$ and never learns pitch.}
     \label{fig:val_curves}
 \end{figure}
 
-\subsection{Analysis}
+\paragraph{Findings.} Under the AR decoder, the pretrained \texttt{vit} encoder
+solves the task almost perfectly ($\mathrm{SER}=0.0029$, $99.85\%$ pitch), while
+the from-scratch \texttt{resnet} encoder learns rhythm only partially and
+\textbf{structurally fails to learn pitch} (${\approx}0\%$): its pitch
+cross-entropy is pinned at the ``\texttt{NULL}-only'' floor, i.e.\ it is correct
+on non-note positions but uninformative on notes. A translation-equivariant CNN
+that pools image height into one token per column discards the \emph{absolute
+vertical position} of a notehead---which is exactly what pitch is on a staff. This
+failure proved invariant to learning-rate sweeps, to replacing height
+mean-pooling with a height-flatten, to higher vertical resolution, and to an
+explicit learned vertical positional embedding, which is why the natural
+conclusion was that the convolutional encoder simply cannot represent pitch.
 
-The pretrained \texttt{vit} encoder solves the task almost perfectly, reaching a
-validation SER of $0.0029$ with $99.85\%$ pitch and $99.78\%$ rhythm accuracy. The
-from-scratch \texttt{resnet} learns rhythm only partially and \textbf{structurally
-fails to learn pitch} (accuracy $\approx0\%$), with its pitch cross-entropy pinned at
-the $\approx1.25$ ``NULL-only'' floor --- i.e.\ it predicts the correct token on
-non-note positions but is uninformative on notes.
+The CTC row refutes that conclusion. Feeding the \emph{same} column-pooled ResNet
+features to a BiLSTM\,+\,per-head CTC decoder reaches a \emph{perfect}
+$\mathrm{SER}=0.0000$ with $100\%$ pitch and rhythm. The encoder was never the
+bottleneck; the AR failure was a joint property of monotonic, one-column-per-symbol
+cross-attention over $1$-D features. CTC's flexible alignment plus the BiLSTM's
+bidirectional context let each column read the staff-line geometry of its
+neighbours as a vertical reference frame, recovering pitch that AR could not.
 
-We attribute this to the encoder geometry rather than the decoder, loss, or data,
-since the \emph{same} decoder and loss reach $99.85\%$ pitch with \texttt{vit}. A
-translation-equivariant CNN that pools image height into a single token per column
-discards the \emph{absolute vertical position} of a notehead --- which is exactly what
-pitch is on a staff. The failure proved invariant to learning-rate sweeps, replacing
-height mean-pooling with height-flatten, increasing vertical resolution, and adding a
-learned vertical positional embedding. A proper fix requires a 2-D feature-token grid
-with 2-D positional embeddings. We therefore adopt \texttt{vit} as the working
-configuration and are currently scaling up its training; the external baselines from
-Section~\ref{section:evaluation} (CRNN, TrOCR, and the Oemer pipeline) remain ongoing
-work for the final report.
+\subsection{Sample efficiency}
+\label{sec:exp:scaling}
+
+To probe how the two paradigms use data, we sweep both across five training-set
+sizes ($1{,}000$ to $100{,}000$), holding everything else fixed
+(Table~\ref{table:scaling}, Figure~\ref{fig:scaling}).
+
+\begin{table}[htbp]
+\centering
+\caption{Best validation SER, pitch, and rhythm accuracy reached within $30$
+epochs at each training-set size, on the $1{,}000$-sample held-out synthetic
+split. Single seed per cell.}
+\label{table:scaling}
+\begin{tabular}{lrccc}
+\toprule
+\textbf{Model} & \textbf{Train size} & \textbf{Best val SER $\downarrow$} & \textbf{Pitch Acc.\ $\uparrow$} & \textbf{Rhythm Acc.\ $\uparrow$} \\
+\midrule
+CRNN+CTC & $1{,}000$   & $0.9484$          & $0.00\%$   & $0.77\%$ \\
+CRNN+CTC & $5{,}000$   & $0.0671$          & $97.14\%$  & $97.28\%$ \\
+CRNN+CTC & $20{,}000$  & $0.0100$          & $99.95\%$  & $99.61\%$ \\
+CRNN+CTC & $50{,}000$  & $0.0002$          & $99.98\%$  & $100.00\%$ \\
+CRNN+CTC & $100{,}000$ & $\mathbf{0.0000}$ & $100.00\%$ & $100.00\%$ \\
+\midrule
+ViT-AR   & $1{,}000$   & $1.0714$          & $1.07\%$   & $28.08\%$ \\
+ViT-AR   & $5{,}000$   & $0.8658$          & $3.68\%$   & $32.46\%$ \\
+ViT-AR   & $20{,}000$  & $0.8938$          & $0.24\%$   & $28.52\%$ \\
+ViT-AR   & $50{,}000$  & $0.0318$          & $97.48\%$  & $98.20\%$ \\
+ViT-AR   & $100{,}000$ & $0.0029$          & $99.85\%$  & $99.78\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[t]{0.46\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/val_ser_vs_train_size.png}
+        \caption{Validation SER (log scale).}
+        \label{fig:scaling_ser}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.46\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/val_pitch_acc_vs_train_size.png}
+        \caption{Validation pitch accuracy.}
+        \label{fig:scaling_pitch}
+    \end{subfigure}
+    \caption{Sample efficiency vs.\ training-set size for CRNN+CTC and ViT-AR.
+    CRNN's curves drop between $1$k and $5$k samples; ViT's drop only between
+    $20$k and $50$k.}
+    \label{fig:scaling}
+\end{figure}
+
+\paragraph{Findings.} The two paradigms occupy qualitatively different
+sample-efficiency regimes. CRNN+CTC reaches usable transcription already at
+$5{,}000$ samples (val SER $0.067$, pitch $97.1\%$) and is within $10^{-3}$ of
+perfect SER from $50{,}000$ upward. ViT-AR instead exhibits a sharp data
+threshold: at ${\le}20{,}000$ samples its pitch head fails to learn at all (pitch
+${\le}3.7\%$, val SER stuck near $0.9$, the regime where free-running generation
+degenerates into runaway sequences), then snaps to val SER $0.0318$ / pitch
+$97.5\%$ at $50{,}000$, close to its $100{,}000$-sample asymptote.
+
+This contradicts the common expectation that ImageNet-pretrained features
+dominate the low-data regime. The pretrained ViT prior carries no music-notation
+structure: pitch depends on a notehead's absolute vertical position on the staff,
+a cue ImageNet pretraining does not reward. Combined with AR's one-column-per-symbol
+alignment, the pitch head needs far more data before it escapes the
+\texttt{NULL}-only floor, whereas CRNN+CTC's bidirectional context and flexible
+alignment make per-symbol learning proportionately more sample-efficient. (We
+report a single seed per cell; the ViT-AR threshold may shift with seed and data
+loader settings, but the order-of-magnitude gap is robust---see
+\S\ref{section:discussion}.)
+
+\subsection{Sim-to-real transfer}
+\label{sec:exp:sim2real}
+
+The deterministic generator lets us photograph the \emph{same} val/test samples
+with a phone and score predictions quantitatively, since each photo pairs $1$:$1$
+by filename with its synthetic ground-truth labels. The clean-trained \texttt{vit}
+model collapses on these photos (Table~\ref{table:external}, top): test SER jumps
+from $0.003$ (clean) to $0.634$ and pitch from $99.8\%$ to $32.5\%$. We then
+warm-start from that checkpoint and fine-tune for $3$ epochs (LR $5\times10^{-5}$)
+under a \texttt{photo} augmentation profile that adds, in order, native-resolution
+lighting/degradation (brightness, gamma, shadows, blur, noise, JPEG) and, after
+padding to the $224^2$ canvas, geometric warps (small rotation, shear,
+perspective). Fine-tuning more than halves the error (test SER $0.258$, pitch
+$64.5\%$) while clean validation barely regresses.
+
+\begin{table}[htbp]
+\centering
+\caption{Real photographed scores: clean-trained baseline vs.\ photo fine-tune.
+$n$ is the number of photos; \emph{val}/\emph{test} are the external photo splits
+(paired to the synthetic val/test samples), \emph{all} their union.}
+\label{table:external}
+\begin{tabular}{llrccc}
+\toprule
+\textbf{Model} & \textbf{Split} & \textbf{$n$} & \textbf{SER $\downarrow$} & \textbf{Pitch Acc.\ $\uparrow$} & \textbf{Rhythm Acc.\ $\uparrow$} \\
+\midrule
+baseline   & val  & $100$ & $0.5858$ & $0.3353$ & $0.8778$ \\
+baseline   & test & $100$ & $0.6343$ & $0.3248$ & $0.8617$ \\
+baseline   & all  & $200$ & $0.6097$ & $0.3302$ & $0.8699$ \\
+\midrule
+fine-tuned & val  & $100$ & $0.2409$ & $0.6686$ & $0.9781$ \\
+fine-tuned & test & $100$ & $\mathbf{0.2582}$ & $\mathbf{0.6454}$ & $\mathbf{0.9648}$ \\
+fine-tuned & all  & $200$ & $0.2494$ & $0.6574$ & $0.9716$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What in the augmentation matters?} A leave-one-out ablation
+(Table~\ref{table:ablation}) drops each augmentation group in turn; each variant
+is selected on the external \emph{val} split and reported on external \emph{test}.
+Removing the geometric group alone reverts photo performance almost to baseline
+(SER $0.605$, pitch $0.331$), a swing of $+0.347$ SER / $-0.314$ pitch---far
+larger than dropping lighting ($+0.068$ / $-0.082$) or degradation ($+0.015$ /
+$-0.011$). A control that fine-tunes with the \texttt{default} (non-photo) profile
+matches the baseline on photos, confirming the gain comes from the augmentation,
+not the extra training steps. The geometric group's dominance pinpoints the
+sim-to-real gap as camera-angle skew causing vertical mis-registration of
+noteheads---consistent with the residual pitch errors being mostly
+``same octave, wrong step.''
+
+\begin{table}[htbp]
+\centering
+\caption{Augmentation leave-one-out on the photo fine-tune (warm-started from the
+clean \texttt{vit} model; $3$ epochs each). Selected on external \emph{val},
+reported on external \emph{test}; clean columns are the synthetic validation set.}
+\label{table:ablation}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Condition} & \textbf{Aug profile} & \textbf{Test SER $\downarrow$} & \textbf{Test pitch $\uparrow$} & \textbf{Clean SER $\downarrow$} & \textbf{Clean pitch $\uparrow$} \\
+\midrule
+baseline (no fine-tune)   & ---                   & $0.634$          & $0.325$          & $0.0030$ & $0.9983$ \\
+fine-tune, no photo aug   & \texttt{default}      & $0.634$          & $0.314$          & $0.0016$ & $0.9990$ \\
+photo, full               & \texttt{photo}        & $\mathbf{0.258}$ & $\mathbf{0.645}$ & $0.0083$ & $0.9917$ \\
+photo $-$ geometric       & \texttt{photo\_no\_geom}    & $0.605$    & $0.331$          & $0.0034$ & $0.9980$ \\
+photo $-$ lighting        & \texttt{photo\_no\_light}   & $0.326$    & $0.563$          & $0.0117$ & $0.9859$ \\
+photo $-$ degrade         & \texttt{photo\_no\_degrade} & $0.273$    & $0.634$          & $0.0087$ & $0.9910$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Deployment}
+\label{sec:exp:deploy}
+
+The full pipeline---inference, token-to-Jianpu mapping, and optional re-engraving
+of the predicted score---is packaged as an interactive web demo. A user uploads or
+selects a staff image; the app runs the \texttt{vit} model, renders aligned Jianpu
+(continuous beams within a beat, octave dots), and can re-engrave the predicted
+stream for visual comparison. Both the clean baseline and the photo fine-tuned
+weights are selectable, so the sim-to-real improvement is directly observable on
+user-supplied photographs.
