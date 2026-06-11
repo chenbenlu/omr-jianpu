@@ -9,6 +9,33 @@ CTC variant reuses the identical encoder features, we could falsify the encoder
 explanation directly. The decoupled-stream contract was what made the negative
 result interpretable rather than merely discouraging.
 
+\paragraph{Revisiting the alignment bottleneck formally.} The same argument can be
+stated at the level of the decoding objective. Write
+$\mathbf{H}=(\mathbf{h}_1,\dots,\mathbf{h}_T)$ for the column-pooled ResNet
+features. The AR decoder factorises the target likelihood autoregressively,
+\begin{equation*}
+  P(\mathbf{y}\mid\mathbf{H})=\prod_{u} P\!\left(y_u \mid y_{<u},\,\mathbf{H}\right),
+\end{equation*}
+conditioning each step on a cross-attention context
+$\mathbf{c}_u=\sum_{t}\alpha_{u,t}\,\mathbf{h}_t$. Because column pooling makes the
+features translation-equivariant---discarding the \emph{absolute} vertical position
+that \emph{is} pitch on a staff---and the attention mass $\alpha_{u,t}$ concentrates
+on a narrow temporal window per symbol, the decoder is starved of the global
+staff-line context needed to infer absolute pitch. CTC instead marginalises over
+every valid alignment path $\boldsymbol{\pi}$ under the many-to-one collapse
+$\mathcal{B}$,
+\begin{equation*}
+  P(\mathbf{y}\mid\mathbf{H})=\!\!\!\sum_{\boldsymbol{\pi}\in\mathcal{B}^{-1}(\mathbf{y})}\ \prod_{t} P\!\left(\pi_t \mid \mathbf{H}\right),
+\end{equation*}
+reading from BiLSTM-contextualised features
+$\mathbf{h}'_t=\mathrm{BiLSTM}(\mathbf{H})_t$. The marginalisation dissolves the
+rigid one-column-per-symbol commitment, while the bidirectional context lets each
+column aggregate the staff-line geometry of its neighbours into the vertical
+reference frame that column pooling removed---recovering pitch in full, and without
+any explicit 2-D positional embedding. This is why the \emph{identical} encoder
+features that look pitch-blind under AR (\S\ref{sec:exp:arch}) become perfectly
+legible under CTC.
+
 \paragraph{Pretraining is not a free low-data prior.} The sample-efficiency gap
 (\S\ref{sec:exp:scaling}) cautions against assuming ImageNet-pretrained encoders
 help most when data is scarce. For a task whose key cue---absolute vertical
