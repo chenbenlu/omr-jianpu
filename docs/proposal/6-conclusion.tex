@@ -1,0 +1,18 @@
+\section{Conclusion}
+\label{section:conclusion}
+
+We built an end-to-end system that transcribes printed monophonic staff notation
+directly into Jianpu, trained entirely on a controlled synthetic corpus whose
+generator emits four decoupled label streams as exact ground truth. The
+decoupled-stream design turned an architecture comparison into a diagnosis: a
+pretrained ViT encoder with an autoregressive decoder solves the task
+($\mathrm{SER}=0.0029$), a from-scratch ResNet encoder appears to fail at pitch
+under the same decoder, yet a CTC decoder over the \emph{identical} ResNet
+features attains a perfect $\mathrm{SER}=0.0000$---locating the bottleneck in the
+decoder's monotonic alignment rather than the encoder. The same CTC model is also
+far more sample-efficient, reaching usable quality from $5{,}000$ samples where
+ViT-AR needs $50{,}000$, and a targeted photo-augmentation fine-tune more than
+halves error on real photographs, with geometric (camera-angle) augmentation the
+dominant lever. Together these results argue that, for music notation, the
+decoder's alignment inductive bias---not the choice of pretrained visual
+encoder---is what governs whether and how cheaply pitch is learned.

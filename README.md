@@ -12,8 +12,9 @@ to PNG). Labels come from the generator as four parallel streams
 be scored independently across encoder variants.
 
 NYCU 535354 Deep Learning final project (Track 3 — Application). Team:
-BEN-LU CHEN, CHUN-JUI HSU, MENG-XI LIN, JIAN-AN ZHU. Full proposal:
-[docs/proposal/proposal.pdf](docs/proposal/proposal.pdf).
+BEN-LU CHEN, CHUN-JUI HSU, MENG-XI LIN, JIAN-AN ZHU. Final report:
+[docs/proposal/proposal.pdf](docs/proposal/proposal.pdf) (built from
+`docs/proposal/*.tex`).
 
 ## Live demo
 
@@ -30,20 +31,35 @@ prediction back to staff notation. Streamlit on Docker, free CPU tier,
 
 ## Results
 
-Same 4-head decoder, same losses, same data — only the encoder front-end
-changes. Validation: 1 000 pre-rendered synthetic samples.
+Same 4-head decoder, same losses, same data — only the encoder/decoder
+front-end changes (100 k train, 30 epochs). Validation: 1 000 pre-rendered
+synthetic samples.
 
-| encoder | Symbol Error Rate ↓ | pitch acc | rhythm acc | notes |
+| encoder + decoder | Symbol Error Rate ↓ | pitch acc | rhythm acc | notes |
 |---|---|---|---|---|
-| **ViT (base)** | **0.0029** | **99.85 %** | **99.78 %** | pretrained on ImageNet; shipped on the Space |
-| ResNet (scratch) | ~1.10 | ~0 % | ~30–40 % | structural ceiling — see [src/model/README.md](src/model/README.md) |
+| **ViT (base) + AR** | 0.0029 | 99.85 % | 99.78 % | ImageNet-pretrained; shipped on the Space |
+| ResNet (scratch) + AR | ~1.01 | ~0 % | ~40 % | AR pitch failure — see below |
+| **ResNet + BiLSTM + CTC** | **0.0000** | **100 %** | **100 %** | CRNN; *same* encoder features as the AR row |
 
-The ResNet result is a documented structural limit, not a tuning failure: a
-translation-equivariant CNN that collapses image height into one token per
-column cannot encode *absolute vertical position*, which is exactly what
-pitch is. Rhythm (per-column) still learns; pitch is pinned at the NULL-only
-floor regardless of LR / pooling / vertical-resolution / vertical-pos-emb
-sweeps. The encoder ablation is the project's main empirical contribution.
+Under an autoregressive (AR) decoder, the from-scratch ResNet *appears* to hit
+a structural pitch ceiling — a height-collapsing CNN seems unable to encode the
+*absolute vertical position* that pitch is. But attaching a BiLSTM + per-head
+CTC decoder to the **same** ResNet features reaches a perfect SER: the real
+bottleneck was the AR decoder's monotonic, one-column-per-symbol alignment, not
+the encoder. The four decoupled streams are what made this diagnosable (pitch
+scored independently). The CRNN+CTC variant lives on
+[`feature/B-crnn-and-ctr`](https://github.com/chenbenlu/omr-jianpu/tree/feature/B-crnn-and-ctr)
+(deploy integration pending).
+
+Two further studies — full tables and figures in [reports/](reports/):
+
+- **Sample efficiency** — CRNN+CTC reaches usable quality from 5 k samples;
+  ViT-AR's pitch head doesn't learn until 50 k. ImageNet pretraining does *not*
+  help in the low-data regime here. ([reports/scaling/](reports/scaling/))
+- **Sim-to-real** — on real phone photos the clean ViT collapses (test SER
+  0.63); a photo-augmentation fine-tune more than halves it (test SER 0.26),
+  with geometric (camera-angle) augmentation the dominant factor.
+  ([reports/external_compare/](reports/external_compare/))
 
 ## Deployment flow
 

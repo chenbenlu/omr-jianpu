@@ -32,8 +32,7 @@
 \usepackage{tikz}           % inline architecture diagram
 \usetikzlibrary{positioning,arrows.meta,fit}
 
-% \title{535354 DL Team Project: Proposal Guidelines (Please put your project title here)}
-\title{535354 DL Team Project: Proposal Guidelines (End-to-End Staff to Jianpu Translation via Vision-Encoder-Decoder Networks)}
+\title{End-to-End Staff-to-Jianpu Translation with a\\Multi-Head Vision-Encoder-Decoder}
 
 % The \author macro works with any number of authors. There are two commands
 % used to separate the names and addresses of multiple authors: \And and \AND.
@@ -44,10 +43,10 @@
 % \AND instead of \And before the third author name.
 
 \author{%
-  BEN-LU CHEN \quad CHUN-JUI HSU \quad MENG-XI LIN \quad JIAN-AN ZHU\\
+  BEN-LU CHEN \quad CHUN-JUI HSU \quad MENG-XI LIN \quad CHIEN-AN CHOU\\
   Institute of Electrical and Computer Engineering\\
   National Yang Ming Chiao Tung University\\
-  \texttt{\{sino.ee14, ray30247905.ee10, member3, member4\}@nycu.edu.tw}
+  \texttt{\{sino.ee14, ray30247905.ee10, s111511265.ee11, cityjd.ee11\}@nycu.edu.tw}
 }
 %\author{%
 %  Your Name 1\quad Your Name 2\quad Your Name 3\\
@@ -60,16 +59,44 @@
 
 \maketitle
 
+\begin{abstract}
+We present an end-to-end deep-learning system that translates images of printed
+monophonic staff notation directly into numbered musical notation (Jianpu),
+bypassing the intermediate MusicXML/MIDI formats and hand-written grouping
+heuristics of conventional Optical Music Recognition (OMR) pipelines. A
+Vision-Encoder-Decoder ingests a score image and a Transformer decoder emits four
+\emph{decoupled} token streams---type, pitch, rhythm, and attribute---so that
+pitch and rhythm accuracy can be measured independently; a post-processor maps
+the streams to Jianpu, and the whole pipeline is shipped as an interactive demo.
+We train and evaluate exclusively on a fully synthetic corpus built with
+\texttt{music21} and \texttt{verovio}, whose generator emits the four label
+streams as ground truth in lock-step with the rendered image. Three findings
+emerge. (i)~An ImageNet-pretrained ViT encoder with an autoregressive (AR)
+decoder solves the task almost perfectly (symbol error rate, SER, $0.0029$), a
+from-scratch ResNet encoder under the same AR decoder \emph{structurally fails to
+learn pitch} ($\approx0\%$), yet attaching a BiLSTM + per-head CTC decoder to the
+\emph{same} ResNet features recovers a perfect SER of $0.0000$---showing the
+bottleneck is the AR monotonic alignment over $1$-D column features, not the
+convolutional encoder. (ii)~In a sample-efficiency sweep, CRNN+CTC reaches usable
+quality from $5{,}000$ samples while the ViT-AR pitch head does not begin to learn
+until $50{,}000$, contradicting the expectation that ImageNet pretraining helps in
+the low-data regime. (iii)~A photo-augmentation fine-tune more than halves SER on
+real phone photographs of scores ($0.634\!\to\!0.258$), and a leave-one-out
+ablation isolates geometric (camera-angle) augmentation as the dominant factor.
+\end{abstract}
+
 
 \input{1-overview}
 
-\input{2-formulation}
-
-\input{3-evaluation}
+\input{2-related}
 
 \input{4-method}
 
 \input{5-exp}
+
+\input{5-discussion}
+
+\input{6-conclusion}
 
 \input{6-contribution}
 

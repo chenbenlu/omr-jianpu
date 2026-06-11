@@ -1,10 +1,104 @@
-\section{Methodology}
-\label{section:algorithm}
-% Please use one paragraph to explain your high-level idea of the solution.
-Our proposed solution employs a Vision-Encoder-Decoder architecture to achieve an end-to-end translation from printed sheet music images to numbered musical notation (Jianpu) token sequences. Specifically, the model ingests a 2D image of a musical score and processes it through a visual encoder (such as a Vision Transformer or a deep Convolutional Neural Network like ResNet) to extract rich, dense spatial feature representations. These extracted visual features are subsequently passed to a Transformer-based decoder, which leverages cross-attention mechanisms to autoregressively predict a 1D sequence of custom Jianpu semantic tokens. By adopting this unified framework, the network implicitly learns both the intricate spatial relationships of standard Western musical symbols (e.g., pitches, rhythms, and chords) and the underlying music theory required for translation, entirely bypassing the need for intermediate formats or explicit, hard-coded heuristic rules.
+\section{Method}
+\label{section:method}
 
-\paragraph{Architecture details.}
-Concretely, the encoder is either a pretrained Vision Transformer \citep{dosovitskiy2021vit} (with the \texttt{[CLS]} token dropped) or a from-scratch ResNet-style CNN, producing a sequence of visual feature tokens. The decoder is a BART-style \citep{lewis2020bart} Transformer ($d_{\text{model}}=384$, $4$ layers, $6$ attention heads, feed-forward dimension $1536$) that cross-attends to these features. Crucially, rather than a single output vocabulary, the decoder carries \textbf{four decoupled output heads} --- \textit{type}, \textit{pitch}, \textit{rhythm}, and \textit{attribute} --- so that pitch and rhythm are predicted (and evaluated) independently. The four corresponding input embeddings are summed, with the structural special tokens (\texttt{PAD}/\texttt{BOS}/\texttt{EOS}) shared across vocabularies so they remain consistent at structural positions. At inference, decoding is greedy with a KV-cache. The training objective is the sum of per-head cross-entropy losses over the four streams.
+We frame staff-to-Jianpu transcription as supervised image-to-sequence
+translation. The model receives a 2-D image of a printed monophonic score and
+decodes a 1-D sequence of semantic tokens; a deterministic post-processor then
+renders those tokens as Jianpu. Training supervision comes entirely from a
+synthetic corpus whose generator emits the target tokens directly, so labels are
+exact. We first describe the data and its four-stream label contract
+(\S\ref{sec:method:data}), then the shared encoder-decoder model
+(\S\ref{sec:method:model}), the two decoder variants we compare
+(\S\ref{sec:method:decoders}), the objective and optimisation
+(\S\ref{sec:method:train}), and finally the Jianpu mapping and evaluation metrics
+(\S\ref{sec:method:eval}).
+
+\subsection{Synthetic data and the four-stream label contract}
+\label{sec:method:data}
+
+Each sample is built by \texttt{music21}~\citep{cuthbert2010music21} as a symbolic
+\texttt{Stream}, exported to MusicXML, and engraved to a PNG by
+\texttt{verovio}~\citep{pugin2014verovio} (pinned to a fixed version, since glyph
+spacing is version-sensitive). Generation is fully deterministic: a sample's RNG
+is derived from \texttt{SeedSequence([seed, sample\_idx])}, so the pair
+$(\textit{seed}, \textit{index})$ reproduces the same score and labels across
+runs. The scope is deliberately restricted to \emph{monophonic} printed
+notation---no chords, slurs, or handwriting---so that the target is an
+unambiguous single-voice sequence.
+
+Crucially, the generator emits the ground-truth labels itself, in lock-step with
+each appended symbol, as \textbf{four parallel decoupled streams}:
+\begin{itemize}
+    \item \textbf{type} $\in$ \{\texttt{note}, \texttt{rest}, \texttt{barline},
+    \texttt{clef}, \texttt{key\_signature}, \texttt{time\_signature}\};
+    \item \textbf{pitch} (notes only): letter $\times$ accidental
+    (\texttt{bb}/\texttt{b}/\texttt{$\natural$}/\texttt{\#}/\texttt{\#\#})
+    $\times$ octave $2$--$6$, otherwise \texttt{<NULL>};
+    \item \textbf{rhythm} (notes/rests only): \texttt{whole}--\texttt{32nd},
+    optionally dotted, otherwise \texttt{<NULL>};
+    \item \textbf{attribute} (clef/key/time only): clef (\texttt{G2}/\texttt{F4}/%
+    \texttt{C3}/\texttt{C4}), key signature in fifths
+    (\texttt{ks-7}..\texttt{ks+7}), or time signature, otherwise \texttt{<NULL>}.
+\end{itemize}
+The four streams are row-aligned (one entry per emitted symbol), so pitch and
+rhythm can be scored independently (Figure~\ref{fig:sample}).
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/sample_staff.png}\\[4pt]
+    {\footnotesize
+    \setlength{\tabcolsep}{3pt}
+    \renewcommand{\arraystretch}{1.15}
+    \begin{tabular}{l|ccccccccc}
+    \texttt{type}      & clef    & key      & time & note & note & note & bar & rest & note \\
+    \texttt{pitch}     & --      & --       & --   & G5   & G5   & G5   & --  & --   & E5   \\
+    \texttt{rhythm}    & --      & --       & --   & 8th  & 8th  & half & --  & qtr  & half \\
+    \texttt{attr}      & G2      & ks$-$1   & 3/4  & --   & --   & --   & --  & --   & --   \\
+    \end{tabular}}\\[5pt]
+    {\small \texttt{[Clef: G2] [Key: F major] [Time: 3/4]}\ \ \ \ \texttt{\_2' \_2' 2' - | 0 7 -}}
+    \caption{A synthetic training sample and its four decoupled label streams,
+    emitted in lock-step by the generator; each column is one symbol and
+    ``\,--\,'' denotes \texttt{<NULL>}. The quarter \texttt{rest} is the
+    illustrative case: its rhythm is supervised while its pitch is
+    \texttt{<NULL>}. The post-processor maps the per-symbol tuples to the Jianpu
+    shown beneath the table (\texttt{\_}: within-beat beam, \texttt{'}: octave-up
+    dot, \texttt{-}: duration extension, \texttt{0}: rest, \texttt{|}: barline).}
+    \label{fig:sample}
+\end{figure}
+
+The closed vocabularies have $6$, $175$,
+$12$, and $26$ content tokens respectively, plus shared structural specials
+($\texttt{PAD}{=}0$, $\texttt{BOS}{=}1$, $\texttt{EOS}{=}2$, $\texttt{UNK}{=}3$,
+$\texttt{NULL}{=}4$) frozen across all four vocabularies so a single embedding
+index denotes a structural position in every stream. Label rows carry no leading
+\texttt{BOS}: they are $[\textit{content}\ldots, \texttt{EOS}, \texttt{PAD}\ldots]$,
+and the decoder shifts in \texttt{BOS} itself (\S\ref{sec:method:model}).
+
+\subsection{Multi-head Vision-Encoder-Decoder}
+\label{sec:method:model}
+
+A visual encoder maps the score image to a sequence of feature tokens, and a
+Transformer decoder cross-attends to them to emit the four streams
+(Figure~\ref{fig:architecture}). We compare two encoders under an identical
+decoder. The \texttt{vit} encoder is an ImageNet-pretrained Vision
+Transformer~\citep{dosovitskiy2021vit} with the \texttt{[CLS]} token dropped,
+fed a $3\times224\times224$ aspect-preserving, white-padded image and producing
+$196$ feature tokens. The \texttt{resnet} encoder is a from-scratch convolutional
+stack (five strided blocks, channels $32\!\to\!256$) over a
+$1\times128\times W$ grayscale image; it pools the staff height into one token per
+horizontal column, yielding a variable-length feature sequence with a padding
+mask.
+
+The decoder is a BART-style~\citep{lewis2020bart} Transformer
+($d_{\text{model}}=384$, $4$ layers, $6$ heads, feed-forward dimension $1536$,
+dropout $0.1$). Rather than one output vocabulary it carries \textbf{four
+decoupled heads}---type, pitch, rhythm, attribute. On the input side, the four
+token streams are embedded separately and \emph{summed} (with the shared specials
+keeping the streams consistent at structural positions); on the output side, four
+linear heads predict the four streams in parallel. Because the decoder is fed
+summed input embeddings, Hugging Face's automatic right-shift does not apply, so
+the model shifts the labels right to prepend \texttt{BOS} explicitly; logits come
+out aligned position-for-position with the raw labels.
 
 % Use the following figure block to insert architecture diagram.
 \begin{figure}[htbp]
@@ -20,7 +114,7 @@ Concretely, the encoder is either a pretrained Vision Transformer \citep{dosovit
         \node (img)  [box]                        {Staff\\image};
         \node (enc)  [enc, right=of img]          {Visual\\Encoder\\{\scriptsize ViT / ResNet}};
         \node (feat) [box, right=of enc]          {Visual\\feature\\tokens};
-        \node (dec)  [dec, right=of feat]         {Transformer\\Decoder\\{\scriptsize cross-attn,}\\{\scriptsize autoregressive}};
+        \node (dec)  [dec, right=of feat]         {Transformer\\Decoder\\{\scriptsize cross-attn,}\\{\scriptsize AR or CTC}};
 
         \node (h2) [head, right=11mm of dec]      {pitch};
         \node (h1) [head, above=2mm of h2]        {type};
@@ -37,9 +131,74 @@ Concretely, the encoder is either a pretrained Vision Transformer \citep{dosovit
         \draw [arr] (dec.east) -- (heads.west);
         \draw [arr] (heads.east) -- (out);
     \end{tikzpicture}
-    \caption{End-to-end Vision-Encoder-Decoder. A staff image is encoded into visual
-    feature tokens (ViT or ResNet); a Transformer decoder cross-attends to them and
-    autoregressively emits four decoupled token streams (type, pitch, rhythm,
-    attribute) that are mapped to Jianpu.}
+    \caption{End-to-end Vision-Encoder-Decoder. A staff image is encoded into
+    visual feature tokens (ViT or ResNet); a decoder maps them to four decoupled
+    token streams (type, pitch, rhythm, attribute) which a post-processor renders
+    as Jianpu. We compare an autoregressive decoder against a BiLSTM\,+\,CTC
+    decoder on identical encoder features.}
     \label{fig:architecture}
 \end{figure}
+
+\subsection{Two decoders: autoregressive vs.\ CTC}
+\label{sec:method:decoders}
+
+The \textbf{autoregressive (AR)} decoder above generates greedily with a KV-cache,
+emitting one position at a time across all four heads and stopping when the type
+head produces \texttt{EOS}. Cross-attention must, for each decoded position,
+select the encoder column that sources the current symbol---a monotonic,
+one-column-per-symbol alignment.
+
+As an alternative we attach a \textbf{CTC} decoder to the \emph{same} ResNet
+features: a bidirectional LSTM contextualises the column sequence, and four
+per-head CTC~\citep{graves2006ctc} classifiers are trained over the encoder time
+axis (a CRNN~\citep{shi2015crnn,calvozaragoza2018end}). CTC marginalises over all
+monotonic alignments rather than fixing one column per symbol; at inference we
+collapse repeats/blanks with a type-anchored greedy decode (emit on type-head
+changes and read pitch/rhythm/attribute from the same time step). This variant is
+empirically validated but kept on a feature branch pending deployment integration
+(\S\ref{section:discussion}).
+
+\subsection{Training objective and optimisation}
+\label{sec:method:train}
+
+The objective is the sum of per-head cross-entropy losses over the four streams.
+\texttt{PAD} positions are ignored. Two optional knobs address class imbalance:
+(i)~a \emph{NULL mask} that, for the pitch/rhythm/attribute heads, coerces
+\texttt{NULL} targets to the ignore index so the head is not dominated by the many
+positions where it is structurally inapplicable; and (ii)~an \emph{EOS
+up-weighting} on the type head, since the single \texttt{EOS} per sequence is
+otherwise swamped by note/rest tokens and the model under-learns when to stop.
+
+All runs use AdamW (learning rate $5\times10^{-4}$, weight decay $0.01$) with a
+cosine schedule ($1{,}000$ warm-up steps), $30$ epochs, \texttt{bf16} mixed
+precision, and gradient clipping at $1.0$, orchestrated with Hydra and
+\texttt{accelerate}. We train on $100{,}000$ deterministic synthetic samples
+(generated on the fly) and select the checkpoint with the best validation SER on
+a held-out, pre-rendered set of $1{,}000$ samples; a separate $1{,}000$-sample
+test set is rendered once for final reporting.
+
+\subsection{From tokens to Jianpu, and evaluation metrics}
+\label{sec:method:eval}
+
+Post-processing is type-anchored: the type stream is the structural authority,
+and a small state machine tracks the running clef, key signature, and time
+signature as those tokens appear, mapping each note's (letter, accidental,
+octave) to a Jianpu scale degree, chromatic alteration, and octave-dot count via a
+circle-of-fifths tonic lookup. The mapping is deterministic and total---a wild
+prediction outside the valid key range yields an empty Jianpu string rather than
+a crash---so it is safe to run on free-form model output at deploy time.
+
+We report three metrics, all computed by aligning the predicted and
+ground-truth sequences as composite $4$-tuples $(\textit{type},\textit{pitch},%
+\textit{rhythm},\textit{attribute})$ with Levenshtein edit operations
+(substitution counts iff any field differs):
+\begin{itemize}
+    \item \textbf{Symbol Error Rate (SER)}, our primary metric: edit distance
+    divided by ground-truth length, analogous to character error rate;
+    \item \textbf{Pitch accuracy}: among aligned ground-truth notes, the fraction
+    with the correct pitch token;
+    \item \textbf{Rhythm accuracy}: among aligned ground-truth notes/rests, the
+    fraction with the correct rhythm token.
+\end{itemize}
+Decoupling pitch and rhythm from the overall SER is what lets us localise the
+encoder failure in \S\ref{section:exp}.

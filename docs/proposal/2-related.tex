@@ -1,0 +1,39 @@
+\section{Related Work}
+\label{section:related}
+
+\paragraph{Pipeline OMR.} Classical OMR decomposes recognition into staff-line
+detection, symbol segmentation/classification, and rule-based reconstruction of
+musical semantics; \citet{calvo2020understanding} survey this paradigm and its
+failure modes. Modern open-source systems such as Oemer~\citep{oemer2023} replace
+hand-crafted segmentation with U-Net semantic segmentation but still rely on
+downstream heuristics to group primitives into notes and to recover voice/rhythm
+structure. These multi-stage designs accumulate cascading errors and emit Western
+intermediate formats (MusicXML/MIDI); converting their output to Jianpu would
+require yet another heuristic stage. We avoid the pipeline entirely and decode the
+target sequence directly.
+
+\paragraph{End-to-end image-to-sequence recognition.} Treating recognition as
+sequence transduction has a long history in OCR and scene-text reading. The
+CRNN~\citep{shi2015crnn} couples a convolutional feature extractor with a
+recurrent network trained under the Connectionist Temporal Classification (CTC)
+loss~\citep{graves2006ctc}, which marginalises over all monotonic alignments
+between a feature sequence and a shorter label sequence and so needs no per-frame
+supervision. For music specifically, \citet{calvozaragoza2018end} show that a
+CRNN+CTC model transcribes \emph{monophonic} scores end-to-end, motivating CTC as
+a natural baseline for our setting. More recently, Transformer
+Vision-Encoder-Decoders such as TrOCR~\citep{li2021trocr} pair a pretrained vision
+encoder~\citep{dosovitskiy2021vit} with a pretrained autoregressive text
+decoder~\citep{lewis2020bart}, reaching state-of-the-art OCR via cross-attention
+rather than CTC's monotonic alignment. Our architecture follows this
+Vision-Encoder-Decoder template but replaces the single text vocabulary with four
+decoupled music-semantic heads, and we directly contrast the AR decoder against a
+CTC decoder on identical convolutional features---a comparison that, to our
+knowledge, has not been reported for the staff-to-Jianpu task.
+
+\paragraph{Synthetic data for music notation.} Because paired staff-to-Jianpu
+corpora do not exist, we generate data programmatically. We build symbolic scores
+with \texttt{music21}~\citep{cuthbert2010music21} and engrave them to images with
+\texttt{verovio}~\citep{pugin2014verovio}; crucially, the generator emits the
+ground-truth token streams \emph{itself}, so labels are exact rather than parsed
+back from the rendered image. This lets us study sample efficiency and
+sim-to-real transfer under fully controlled supervision.
