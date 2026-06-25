@@ -129,6 +129,9 @@ GEMINI.md
 # Keep the rendered PDF.
 !docs/proposal/proposal.pdf
 
+# Remote LaTeX compile: machine-local API URL — never commit (see tools/README.md).
+tools/latex-remote.config.json
+
 # ---------- Hugging Face Space assembly tree ----------
 # spaces/ holds an independently-versioned mirror of src/deploy + assets that
 # we push to https://huggingface.co/spaces/chenbenlu/omr-to-jianpu. It has its

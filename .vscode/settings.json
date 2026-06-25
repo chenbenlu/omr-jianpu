@@ -5,18 +5,14 @@
     "latex-workshop.latex.tools": [
         {
             "name": "remote-compile",
-            "command": "powershell.exe",
+            "command": "python",
             "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "%WORKSPACE_FOLDER%\\tools\\latex-remote.ps1",
-                "-RootTex",
+                "%WORKSPACE_FOLDER%\\tools\\latex-remote.py",
+                "--root",
                 "%DOC_EXT%",
-                "-OutDir",
+                "--out",
                 "%OUTDIR%",
-                "-Engine",
+                "--engine",
                 "pdflatex"
             ],
             "env": {}
