@@ -1,0 +1,4 @@
+{
+  "_comment": "複製本檔為 latex-remote.config.json（已 gitignore），把 api_url 改成你的內網/VPN 編譯服務位址。也可改用環境變數 LATEX_REMOTE_API_URL。",
+  "api_url": "http://<compiler-host>:<port>"
+}
