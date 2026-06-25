@@ -5,9 +5,9 @@
     "latex-workshop.latex.tools": [
         {
             "name": "remote-compile",
-            "command": "python",
+            "command": "python3",
             "args": [
-                "%WORKSPACE_FOLDER%\\tools\\latex-remote.py",
+                "%WORKSPACE_FOLDER%/tools/latex-remote.py",
                 "--root",
                 "%DOC_EXT%",
                 "--out",
