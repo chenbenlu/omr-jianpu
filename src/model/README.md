@@ -100,8 +100,8 @@ unchanged; only the (deterministic, `(seed, idx)`-keyed) base render is cached.
 
 ## Reference training configs
 
-Commands that reproduce the ablation numbers above on a single RTX 5070
-(12 GB), on-the-fly rendering.
+Commands that reproduce the ablation numbers above on a single compatible
+NVIDIA GPU, on-the-fly rendering.
 
 ### ViT — val SER 0.0029
 

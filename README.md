@@ -80,8 +80,8 @@ API.
 ## Quick start
 
 You need WSL2 + Docker Desktop with the NVIDIA Container Toolkit, on a
-machine with a Blackwell GPU (RTX 5060 / 5070). In VS Code, open the repo
-and "Reopen in Container" — picks up
+machine with a compatible NVIDIA GPU. In VS Code, open the repo and "Reopen
+in Container" — picks up
 [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) and
 installs the pre-commit hooks for you. From a CLI:
 
