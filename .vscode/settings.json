@@ -1,0 +1,55 @@
+{
+    // ===== LaTeX Workshop： 遠端編譯 + 本機備援 =====
+    // 「遠端編譯」把 docs/proposal 整包上傳遠端 latex-compiler 服務（需內網或 VPN）。
+    // autoBuild=never：只在你按 Build（Ctrl+Alt+B / 側欄 TeX 圖示）時才編譯，不會存檔自動跑。
+    "latex-workshop.latex.tools": [
+        {
+            "name": "remote-compile",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "%WORKSPACE_FOLDER%\\tools\\latex-remote.ps1",
+                "-RootTex",
+                "%DOC_EXT%",
+                "-OutDir",
+                "%OUTDIR%",
+                "-Engine",
+                "pdflatex"
+            ],
+            "env": {}
+        },
+        {
+            "name": "latexmk-local",
+            "command": "latexmk",
+            "args": [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+                "-file-line-error",
+                "-pdf",
+                "-outdir=%OUTDIR%",
+                "%DOC%"
+            ],
+            "env": {}
+        }
+    ],
+    "latex-workshop.latex.recipes": [
+        {
+            "name": "遠端編譯 (pdflatex)",
+            "tools": [
+                "remote-compile"
+            ]
+        },
+        {
+            "name": "latexmk (本機備援)",
+            "tools": [
+                "latexmk-local"
+            ]
+        }
+    ],
+    "latex-workshop.latex.outDir": "%DIR%",
+    "latex-workshop.latex.autoBuild.run": "never",
+    "latex-workshop.latex.recipe.default": "lastUsed"
+}
